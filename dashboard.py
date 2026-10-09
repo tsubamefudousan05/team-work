@@ -1,6 +1,6 @@
 """
-Autonomous Multi-Agent Strategy Chamber (Timer & Cloud Safe Edition)
-各フェーズ所要時間表示・スレッドセーフ・パスワード保護版
+Autonomous Multi-Agent Strategy Chamber (Speed & Stability Edition)
+高速・安定動作・経過タイマー付き 合議制意思決定ダッシュボード
 """
 
 import streamlit as st
@@ -70,12 +70,13 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-PRIMARY_MODEL = "gemini-3-flash-preview"
-FALLBACK_MODEL = "gemini-3.8-flash"
+# 応答速度重視のモデル構成
+PRIMARY_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-2.5-flash-lite"
 
-MAX_RETRIES = 5
-BASE_WAIT_SECONDS = 30
-COOLDOWN_SECONDS = 2
+MAX_RETRIES = 3
+BASE_WAIT_SECONDS = 4  # 長時間の待機固まりを防止
+COOLDOWN_SECONDS = 1
 
 # ==========================================
 # 4. サイドバー & コントロール
@@ -84,7 +85,7 @@ with st.sidebar:
     st.header("⚙️ システム構成")
     st.markdown("""
     - **Security**: Authorized Session
-    - **Engine**: Gemini Flash (Dual Fallback)
+    - **Engine**: Gemini Flash
     - **Architecture**: 6-Agent Consensus
     - **Pipeline**:
       1. 👨‍💼 リーダー（要件定義）
@@ -108,7 +109,7 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 5. エージェントコア（スレッドセーフ設計）
+# 5. エージェントコア
 # ==========================================
 def ask_agent(
     role_title: str,
@@ -117,12 +118,15 @@ def ask_agent(
     primary_model: str = PRIMARY_MODEL,
     fallback_model: str = FALLBACK_MODEL,
 ) -> str:
-    """特化プロンプトを注入し、耐障害性を備えたGeminiエージェントを呼び出す。"""
     if not API_KEY:
         raise ValueError("APIキーが設定されていません。")
 
     client = genai.Client(api_key=API_KEY)
-    combined_prompt = f"【あなたの役割・ルール】\n{system_instruction}\n\n【入力テキスト】\n{prompt}"
+    combined_prompt = (
+        f"【あなたの役割・ルール】\n{system_instruction}\n"
+        f"※回答は簡潔・要点を箇条書きで分かりやすくまとめてください。\n\n"
+        f"【入力テキスト】\n{prompt}"
+    )
     current_model = primary_model
 
     for attempt in range(MAX_RETRIES):
@@ -133,13 +137,10 @@ def ask_agent(
             )
             time.sleep(COOLDOWN_SECONDS)
             return response.text
-
         except Exception as err:
             if attempt < MAX_RETRIES - 1:
-                if attempt >= 1 and current_model == primary_model:
-                    current_model = fallback_model
-                wait_sec = BASE_WAIT_SECONDS * (attempt + 1)
-                time.sleep(wait_sec)
+                current_model = fallback_model
+                time.sleep(BASE_WAIT_SECONDS)
             else:
                 raise err
 
@@ -157,12 +158,10 @@ user_theme = st.text_area(
     help="事業アイデア、法務戦略、業務改善など多角的に検証したい課題を入力してください。"
 )
 
-col_run, _ = st.columns([1, 4])
-with col_run:
-    run_button = st.button("🚀 合議セッションを開始", type="primary", use_container_width=True)
+run_button = st.button("🚀 合議セッションを開始", type="primary", use_container_width=False)
 
 # ==========================================
-# 7. セッション実行パイプライン（タイマー機能付き）
+# 7. セッション実行パイプライン（高速タイマー版）
 # ==========================================
 if run_button:
     if not API_KEY:
@@ -170,72 +169,53 @@ if run_button:
     elif not user_theme.strip():
         st.warning("テーマを入力してください。")
     else:
-        total_start_time = time.time()
+        total_start = time.time()
         with st.status("エージェントセッション実行中...", expanded=True) as status:
             # Phase 1: リーダー
             t0 = time.time()
-            status.write("👨‍💼 **チームリーダー** が課題設計と調査要件を定義中...")
-            leader_prompt = (
-                "あなたは優秀なチームリーダーです。"
-                "ユーザーの入力テーマから、最終的な目標と、次のリサーチャーが調べるべき具体的な調査項目を3〜4つ箇条書きで定義してください。"
-            )
+            status.write("👨‍💼 **チームリーダー** が要件定義中...")
+            leader_prompt = "優秀なリーダーとして、目標とリサーチャーが調べるべき調査項目を3点箇条書きで示してください。"
             leader_out = ask_agent("リーダー", leader_prompt, user_theme)
-            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
+            status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
             # Phase 2: リサーチャー
             t0 = time.time()
-            status.write("🔍 **リサーチャー** が客観的事実・先行事例・データを収集中...")
-            researcher_prompt = (
-                "あなたは客観的なリサーチャーです。"
-                "リーダーの指示に従い、テーマに関する事実、データ、一般的な事例のみを収集・整理してください。個人の意見は不要です。"
-            )
+            status.write("🔍 **リサーチャー** が事例・ファクトデータを整理中...")
+            researcher_prompt = "客観的なリサーチャーとして、事実・先行事例・データのみを簡潔にまとめてください。"
             research_out = ask_agent("リサーチャー", researcher_prompt, leader_out)
-            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
+            status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
             # Phase 3: 並列討論
             t0 = time.time()
-            status.write("⚡ **肯定派 vs 否定派** が並列スレッドで激論中...")
-            promoter_prompt = (
-                "あなたは熱狂的なプロモーター（肯定派）です。"
-                "リサーチ結果をもとに、このテーマ・アイデアが絶対に成功する理由、メリット、ポテンシャルを熱く提示してください。"
-            )
-            redteam_prompt = (
-                "あなたは冷酷なレッドチーム（否定派）です。"
-                "リサーチ結果をもとに、このテーマ・アイデアの致命的なリスク、コスト問題、失敗シナリオを容赦なく指摘してください。"
-            )
+            status.write("⚡ **肯定派 vs 否定派** が並列スレッドで討論中...")
+            promoter_prompt = "プロモーターとして、成功理由とビジネスの収益ポテンシャルを強調してください。"
+            redteam_prompt = "レッドチームとして、致命的な法的・コスト・運用リスクを容赦なく指摘してください。"
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                f_promoter = executor.submit(ask_agent, "肯定派", promoter_prompt, research_out)
-                f_redteam = executor.submit(ask_agent, "否定派", redteam_prompt, research_out)
-                promoter_out = f_promoter.result()
-                redteam_out = f_redteam.result()
-            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
+                f_pro = executor.submit(ask_agent, "肯定派", promoter_prompt, research_out)
+                f_con = executor.submit(ask_agent, "否定派", redteam_prompt, research_out)
+                promoter_out = f_pro.result()
+                redteam_out = f_con.result()
+            status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
             # Phase 4: モデレーター
             t0 = time.time()
-            status.write("⚖️ **モデレーター** がトレードオフを止揚し、最適解を調停中...")
-            moderator_prompt = (
-                "あなたは冷静なモデレーターです。"
-                "肯定派のメリットと否定派のリスクを両方読み込み、リスクを最小化しつつメリットを最大化するための「最適解・妥協点」を導き出してください。"
-            )
-            moderator_input = f"【肯定派の意見】\n{promoter_out}\n\n【否定派の意見】\n{redteam_out}"
+            status.write("⚖️ **モデレーター** がトレードオフを最適化中...")
+            moderator_prompt = "モデレーターとして、肯定派の利益と否定派のリスクを統合した最適妥協案を導いてください。"
+            moderator_input = f"【肯定派】\n{promoter_out}\n\n【否定派】\n{redteam_out}"
             moderator_out = ask_agent("モデレーター", moderator_prompt, moderator_input)
-            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
+            status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
             # Phase 5: プランナー
             t0 = time.time()
-            status.write("🗺️ **プランナー** が実行ロードマップを策定中...")
-            planner_prompt = (
-                "あなたは実行力のあるプランナーです。"
-                "モデレーターの結論をもとに、ユーザーが明日から実行できる具体的なステップのロードマップを作成してください。"
-            )
+            status.write("🗺️ **プランナー** がアクションロードマップを策定中...")
+            planner_prompt = "プランナーとして、明日から着手できる具体的な実行ロードマップを作成してください。"
             planner_out = ask_agent("プランナー", planner_prompt, moderator_out)
-            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
+            status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
-            total_elapsed = time.time() - total_start_time
             status.update(
-                label=f"✅ 全エージェントの合議プロセス完了 (合計: {total_elapsed:.1f} 秒)", 
-                state="complete", 
+                label=f"✅ 全合議プロセス完了 (総所要時間: {time.time() - total_start:.1f}秒)",
+                state="complete",
                 expanded=False
             )
 
@@ -244,7 +224,7 @@ if run_button:
         # ==========================================
         st.divider()
 
-        with st.expander("📌 Phase 1 & 2: 前提設計とファクトデータ（リーダー＆リサーチャー）", expanded=False):
+        with st.expander("📌 Phase 1 & 2: 前提設計とファクトデータ", expanded=False):
             st.markdown("#### 👨‍💼 チームリーダーの要件定義")
             st.markdown(leader_out)
             st.markdown("---")
