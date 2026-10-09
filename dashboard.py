@@ -1,6 +1,6 @@
 """
-Autonomous Multi-Agent Strategy Chamber (Auth Protected & Secure Edition)
-パスワード認証ゲート付き・APIキー安全管理版 合議制意思決定ダッシュボード
+Autonomous Multi-Agent Strategy Chamber (Cloud Thread-Safe Edition)
+スレッドセーフ対応・パスワード認証付き 合議制意思決定ダッシュボード
 """
 
 import streamlit as st
@@ -18,7 +18,6 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# モダン・ミニマルなUIスタイリング
 st.markdown("""
 <style>
     .main { background-color: #0f1117; }
@@ -65,9 +64,8 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==========================================
-# 3. コンフィグレーション & APIキーの安全な取得
+# 3. コンフィグレーション
 # ==========================================
-# クラウド上のSecretsから取得。未設定の場合はセッションから読み込む
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
 PRIMARY_MODEL = "gemini-3-flash-preview"
@@ -95,7 +93,6 @@ with st.sidebar:
     """)
     st.divider()
 
-    # Secretsにキーがない場合のみ、サイドバーでキー入力可能にする安全対策
     if not st.secrets.get("GEMINI_API_KEY"):
         key_input = st.text_input("Gemini API Key", type="password", value=API_KEY)
         if key_input:
@@ -108,13 +105,12 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 5. エージェントコア
+# 5. エージェントコア（スレッドセーフ版）
 # ==========================================
 def ask_agent(
     role_title: str,
     system_instruction: str,
     prompt: str,
-    status_container=None,
     primary_model: str = PRIMARY_MODEL,
     fallback_model: str = FALLBACK_MODEL,
 ) -> str:
@@ -139,16 +135,9 @@ def ask_agent(
             if attempt < MAX_RETRIES - 1:
                 if attempt >= 1 and current_model == primary_model:
                     current_model = fallback_model
-                    if status_container:
-                        status_container.write(f"🔀 **[{role_title}]** 予備モデル ({fallback_model}) へフォールバック...")
-
                 wait_sec = BASE_WAIT_SECONDS * (attempt + 1)
-                if status_container:
-                    status_container.write(f"⚠️ **[{role_title}]** 高負荷検出: {wait_sec}秒待機後に再試行中 ({attempt + 1}/{MAX_RETRIES})...")
                 time.sleep(wait_sec)
             else:
-                if status_container:
-                    status_container.write(f"❌ **[{role_title}]** エラー発生")
                 raise err
 
 # ==========================================
@@ -157,7 +146,7 @@ def ask_agent(
 st.title("⚖️ Autonomous Strategy Chamber")
 st.caption("6体の自律型AIエージェントによる多角的合議制ディシジョン・エンジン")
 
-default_theme = "日本の空家問題と不動産会社の空き家ビジネスの成功例"
+default_theme = "日本の空家問題と不動産会社の空き家ビジネスの成功例を元に、岡山市内でできる新事業は何か"
 user_theme = st.text_area(
     "プロジェクトテーマ・検討課題",
     value=default_theme,
@@ -185,7 +174,7 @@ if run_button:
                 "あなたは優秀なチームリーダーです。"
                 "ユーザーの入力テーマから、最終的な目標と、次のリサーチャーが調べるべき具体的な調査項目を3〜4つ箇条書きで定義してください。"
             )
-            leader_out = ask_agent("リーダー", leader_prompt, user_theme, status)
+            leader_out = ask_agent("リーダー", leader_prompt, user_theme)
 
             # Phase 2: リサーチャー
             status.write("🔍 **リサーチャー** が客観的事実・先行事例・データを収集中...")
@@ -193,9 +182,9 @@ if run_button:
                 "あなたは客観的なリサーチャーです。"
                 "リーダーの指示に従い、テーマに関する事実、データ、一般的な事例のみを収集・整理してください。個人の意見は不要です。"
             )
-            research_out = ask_agent("リサーチャー", researcher_prompt, leader_out, status)
+            research_out = ask_agent("リサーチャー", researcher_prompt, leader_out)
 
-            # Phase 3: 並列討論
+            # Phase 3: 並列討論（メインスレッドから描画）
             status.write("⚡ **肯定派 vs 否定派** が並列スレッドで激論中...")
             promoter_prompt = (
                 "あなたは熱狂的なプロモーター（肯定派）です。"
@@ -207,8 +196,8 @@ if run_button:
             )
 
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                f_promoter = executor.submit(ask_agent, "肯定派", promoter_prompt, research_out, status)
-                f_redteam = executor.submit(ask_agent, "否定派", redteam_prompt, research_out, status)
+                f_promoter = executor.submit(ask_agent, "肯定派", promoter_prompt, research_out)
+                f_redteam = executor.submit(ask_agent, "否定派", redteam_prompt, research_out)
                 promoter_out = f_promoter.result()
                 redteam_out = f_redteam.result()
 
@@ -219,7 +208,7 @@ if run_button:
                 "肯定派のメリットと否定派のリスクを両方読み込み、リスクを最小化しつつメリットを最大化するための「最適解・妥協点」を導き出してください。"
             )
             moderator_input = f"【肯定派の意見】\n{promoter_out}\n\n【否定派の意見】\n{redteam_out}"
-            moderator_out = ask_agent("モデレーター", moderator_prompt, moderator_input, status)
+            moderator_out = ask_agent("モデレーター", moderator_prompt, moderator_input)
 
             # Phase 5: プランナー
             status.write("🗺️ **プランナー** が実行ロードマップを策定中...")
@@ -227,7 +216,7 @@ if run_button:
                 "あなたは実行力のあるプランナーです。"
                 "モデレーターの結論をもとに、ユーザーが明日から実行できる具体的なステップのロードマップを作成してください。"
             )
-            planner_out = ask_agent("プランナー", planner_prompt, moderator_out, status)
+            planner_out = ask_agent("プランナー", planner_prompt, moderator_out)
 
             status.update(label="✅ 全エージェントの合議プロセス完了", state="complete", expanded=False)
 
