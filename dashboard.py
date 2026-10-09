@@ -1,5 +1,5 @@
 """
-Autonomous Multi-Agent Strategy Chamber (Model Fixed & Quota Safe Edition)
+Autonomous Multi-Agent Strategy Chamber (Latest 3.5 Series Edition)
 """
 
 import streamlit as st
@@ -69,9 +69,9 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-# google-genai SDK で確実に稼働する現行標準モデル
-PRIMARY_MODEL = "gemini-2.0-flash"
-FALLBACK_MODEL = "gemini-2.0-flash-lite"
+# API推奨の最新モデル構成
+PRIMARY_MODEL = "gemini-3.5-flash-lite"
+FALLBACK_MODEL = "gemini-3-flash-preview"
 
 MAX_RETRIES = 3
 BASE_WAIT_SECONDS = 4
