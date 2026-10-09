@@ -1,5 +1,6 @@
 """
-Autonomous Multi-Agent Strategy Chamber (Latest 3.5 Series Edition)
+Autonomous Multi-Agent Strategy Chamber (Refined Persona & Architecture Edition)
+冷静なプロフェッショナルトーン・スレッドセーフ・免責自動付与版
 """
 
 import streamlit as st
@@ -69,7 +70,7 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-# API推奨の最新モデル構成
+# 利用可能な現行高速・軽量モデル
 PRIMARY_MODEL = "gemini-3.5-flash-lite"
 FALLBACK_MODEL = "gemini-3-flash-preview"
 
@@ -122,9 +123,11 @@ def ask_agent(
 
     client = genai.Client(api_key=API_KEY)
     combined_prompt = (
-        f"【あなたの役割・ルール】\n{system_instruction}\n"
-        f"※回答は要点を整理し、箇条書きを活用して構造化してください。\n\n"
-        f"【入力テキスト】\n{prompt}"
+        f"【あなたの役割・ペルソナ】\n{system_instruction}\n\n"
+        f"【入力コンテキスト】\n{prompt}\n\n"
+        f"【出力要件】\n"
+        f"- 感情的・過剰な煽り表現は排除し、プロフェッショナルな実務論理で記述すること。\n"
+        f"- 構造化された見出し・箇条書き・根拠を明確に提示すること。"
     )
     current_model = primary_model
 
@@ -141,7 +144,7 @@ def ask_agent(
                 current_model = fallback_model
                 time.sleep(BASE_WAIT_SECONDS)
             else:
-                raise RuntimeError(f"[{role_title}] モデル呼び出し失敗 ({current_model}): {err}")
+                raise RuntimeError(f"[{role_title}] モデル呼出失敗 ({current_model}): {err}")
 
 # ==========================================
 # 6. メインUIレイアウト
@@ -174,22 +177,38 @@ if run_button:
                 # Phase 1: リーダー
                 t0 = time.time()
                 status.write("👨‍💼 **チームリーダー** が課題設計と調査要件を定義中...")
-                leader_prompt = "優秀なリーダーとして、目標とリサーチャーが調べるべき調査項目を3〜4点箇条書きで示してください。"
+                leader_prompt = (
+                    "あなたは冷静沈着なプロジェクト総括責任者です。"
+                    "提示されたテーマの本質的ゴールを定め、リサーチャーが調査すべきファクト項目（市場性・法規制・競合動向等）を"
+                    "具体的かつ明確に整理してください。"
+                )
                 leader_out = ask_agent("リーダー", leader_prompt, user_theme)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
                 # Phase 2: リサーチャー
                 t0 = time.time()
                 status.write("🔍 **リサーチャー** が事例・ファクトデータを収集中...")
-                researcher_prompt = "客観的なリサーチャーとして、事実・先行事例・データのみを整理してください。"
+                researcher_prompt = (
+                    "あなたは客観性を重んじるシニアリサーチャーです。"
+                    "リーダーの要件定義に基づき、客観的事実、既存の成功モデル、公的統計・制度、市場動向のみを"
+                    "私見を交えずに構造化して抽出してください。"
+                )
                 research_out = ask_agent("リサーチャー", researcher_prompt, leader_out)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
-                # Phase 3: 並列討論
+                # Phase 3: 並列討論（落ち着いたプロの論争）
                 t0 = time.time()
                 status.write("⚡ **肯定派 vs 否定派** が並列スレッドで激論中...")
-                promoter_prompt = "熱狂的なプロモーターとして、成功理由とビジネスの収益ポテンシャルを強調してください。"
-                redteam_prompt = "冷酷なレッドチームとして、致命的な法的・コスト・運用リスクを容赦なく指摘してください。"
+                promoter_prompt = (
+                    "あなたは洗練された事業開発責任者（BizDev）です。ネットスラングや過剰な感嘆符は一切使わず、"
+                    "リサーチ結果を踏まえて、この事業が成立する確固たる根拠、経済的メリット、参入障壁の突破口、"
+                    "収益化のポテンシャルを理路整然と力強く提示してください。"
+                )
+                redteam_prompt = (
+                    "あなたは冷静沈着な最高リスク管理責任者（CRO）です。感情論ではなく冷徹な実務視点から、"
+                    "法規制、財務・キャッシュフロー、リソース不足、契約トラブル、撤退シナリオなど、"
+                    "想定される致命的脆弱性を厳密に列挙・告発してください。"
+                )
 
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
                     f_pro = executor.submit(ask_agent, "肯定派", promoter_prompt, research_out)
@@ -201,15 +220,23 @@ if run_button:
                 # Phase 4: モデレーター
                 t0 = time.time()
                 status.write("⚖️ **モデレーター** がトレードオフを最適化中...")
-                moderator_prompt = "冷静なモデレーターとして、肯定派の利益と否定派のリスクを統合した最適妥協案を導いてください。"
-                moderator_input = f"【肯定派】\n{promoter_out}\n\n【否定派】\n{redteam_out}"
+                moderator_prompt = (
+                    "あなたは中立的で公平な経営判断を下すチーフモデレーターです。"
+                    "BizDev（推進派）の好機とCRO（慎重派）のリスクを対比・止揚し、"
+                    "リスクを統制しつつ利益を確保する「現実的な最適妥協案」を論理的に策定してください。"
+                )
+                moderator_input = f"【BizDev（肯定意見）】\n{promoter_out}\n\n【CRO（否定・リスク指摘）】\n{redteam_out}"
                 moderator_out = ask_agent("モデレーター", moderator_prompt, moderator_input)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
                 # Phase 5: プランナー
                 t0 = time.time()
                 status.write("🗺️ **プランナー** がアクションロードマップを策定中...")
-                planner_prompt = "実行力のあるプランナーとして、明日から着手できる具体的な実行ロードマップを作成してください。"
+                planner_prompt = (
+                    "あなたは実務遂行力に長けたプロジェクトマネージャー（PMO）です。"
+                    "モデレーターの最適解に基づき、初期検証（PoC）から本格展開までのフェーズ分け、"
+                    "各フェーズでの具体的タスク、成果物、検証基準を整理した実効性の高いロードマップを策定してください。"
+                )
                 planner_out = ask_agent("プランナー", planner_prompt, moderator_out)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
@@ -224,22 +251,22 @@ if run_button:
                 # ==========================================
                 st.divider()
 
-                with st.expander("📌 Phase 1 & 2: 前提設計とファクトデータ", expanded=False):
+                with st.expander("📌 Phase 1 & 2: 前提設計とファクトデータ（リーダー＆リサーチャー）", expanded=True):
                     st.markdown("#### 👨‍💼 チームリーダーの要件定義")
                     st.markdown(leader_out)
                     st.markdown("---")
                     st.markdown("#### 🔍 リサーチャーの調査結果")
                     st.markdown(research_out)
 
-                st.markdown("### ⚔️ Phase 3: 対立討論（プロモーター vs レッドチーム）")
+                st.markdown("### ⚔️ Phase 3: 対立討論（BizDev vs CRO）")
                 col_pro, col_con = st.columns(2)
                 with col_pro:
                     with st.container(border=True):
-                        st.markdown("#### ✨ 肯定派（プロモーター）")
+                        st.markdown("#### 📈 推進派（BizDev）")
                         st.markdown(promoter_out)
                 with col_con:
                     with st.container(border=True):
-                        st.markdown("#### 🔥 否定派（レッドチーム）")
+                        st.markdown("#### 🛡️ 慎重派（CRO）")
                         st.markdown(redteam_out)
 
                 st.markdown("### ⚖️ Phase 4: 止揚・最適解（モデレーター）")
@@ -249,6 +276,8 @@ if run_button:
                 st.markdown("### 🗺️ Phase 5: 確定アクションロードマップ（プランナー）")
                 with st.container(border=True):
                     st.markdown(planner_out)
+
+                st.caption("※ 本提案・工程表は自律型AIエージェントによる合議ドラフトです。実務導入時は関係法令・実勢相場等の専門的検証を行ってください。")
 
             except Exception as e:
                 status.update(label="❌ エラーが発生しました", state="error", expanded=True)
