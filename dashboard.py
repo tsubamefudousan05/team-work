@@ -1,5 +1,5 @@
 """
-Autonomous Multi-Agent Strategy Chamber (Model Restored & Error Safe Edition)
+Autonomous Multi-Agent Strategy Chamber (Model Restored & Syntax Safe Edition)
 """
 
 import streamlit as st
@@ -69,7 +69,6 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-# 指定の運用モデル
 PRIMARY_MODEL = "gemini-3-flash-preview"
 FALLBACK_MODEL = "gemini-3.8-flash"
 
@@ -208,4 +207,48 @@ if run_button:
 
                 # Phase 5: プランナー
                 t0 = time.time()
-                status.write("🗺️ **プランナー** がアクションロードマップを策定中
+                status.write("🗺️ **プランナー** がアクションロードマップを策定中...")
+                planner_prompt = "実行力のあるプランナーとして、明日から着手できる具体的な実行ロードマップを作成してください。"
+                planner_out = ask_agent("プランナー", planner_prompt, moderator_out)
+                status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
+
+                status.update(
+                    label=f"✅ 全合議プロセス完了 (総所要時間: {time.time() - total_start:.1f}秒)",
+                    state="complete",
+                    expanded=False
+                )
+
+                # ==========================================
+                # 8. 結果描画セクション
+                # ==========================================
+                st.divider()
+
+                with st.expander("📌 Phase 1 & 2: 前提設計とファクトデータ", expanded=False):
+                    st.markdown("#### 👨‍💼 チームリーダーの要件定義")
+                    st.markdown(leader_out)
+                    st.markdown("---")
+                    st.markdown("#### 🔍 リサーチャーの調査結果")
+                    st.markdown(research_out)
+
+                st.markdown("### ⚔️ Phase 3: 対立討論（プロモーター vs レッドチーム）")
+                col_pro, col_con = st.columns(2)
+                with col_pro:
+                    with st.container(border=True):
+                        st.markdown("#### ✨ 肯定派（プロモーター）")
+                        st.markdown(promoter_out)
+                with col_con:
+                    with st.container(border=True):
+                        st.markdown("#### 🔥 否定派（レッドチーム）")
+                        st.markdown(redteam_out)
+
+                st.markdown("### ⚖️ Phase 4: 止揚・最適解（モデレーター）")
+                with st.container(border=True):
+                    st.markdown(moderator_out)
+
+                st.markdown("### 🗺️ Phase 5: 確定アクションロードマップ（プランナー）")
+                with st.container(border=True):
+                    st.markdown(planner_out)
+
+            except Exception as e:
+                status.update(label="❌ エラーが発生しました", state="error", expanded=True)
+                st.error(f"実行エラー詳細: {e}")
