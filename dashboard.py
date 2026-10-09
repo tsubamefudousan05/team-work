@@ -1,5 +1,6 @@
 """
-Autonomous Multi-Agent Strategy Chamber (Model Restored & Syntax Safe Edition)
+Autonomous Multi-Agent Strategy Chamber (High-Quota Free Tier Edition)
+無料枠（1日1,500回）標準モデル適用・スレッドセーフ版
 """
 
 import streamlit as st
@@ -69,11 +70,12 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-PRIMARY_MODEL = "gemini-3-flash-preview"
-FALLBACK_MODEL = "gemini-3.8-flash"
+# 無料枠で1日1,500回使える安定モデルを指定
+PRIMARY_MODEL = "gemini-2.5-flash"
+FALLBACK_MODEL = "gemini-1.5-flash"
 
 MAX_RETRIES = 3
-BASE_WAIT_SECONDS = 5
+BASE_WAIT_SECONDS = 4
 COOLDOWN_SECONDS = 1
 
 # ==========================================
@@ -122,7 +124,7 @@ def ask_agent(
     client = genai.Client(api_key=API_KEY)
     combined_prompt = (
         f"【あなたの役割・ルール】\n{system_instruction}\n"
-        f"※回答は要点を明確にし、箇条書きを活用して構造化してください。\n\n"
+        f"※回答は要点を整理し、箇条書きを活用して構造化してください。\n\n"
         f"【入力テキスト】\n{prompt}"
     )
     current_model = primary_model
