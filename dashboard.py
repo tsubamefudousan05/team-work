@@ -1,6 +1,6 @@
 """
-Autonomous Multi-Agent Strategy Chamber (Cloud Thread-Safe Edition)
-スレッドセーフ対応・パスワード認証付き 合議制意思決定ダッシュボード
+Autonomous Multi-Agent Strategy Chamber (Timer & Cloud Safe Edition)
+各フェーズ所要時間表示・スレッドセーフ・パスワード保護版
 """
 
 import streamlit as st
@@ -39,10 +39,11 @@ if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
 def check_password():
-    if st.session_state.get("password_input") == APP_PASSWORD:
+    input_pw = st.session_state.get("password_input", "")
+    if input_pw == APP_PASSWORD:
         st.session_state.authenticated = True
         st.session_state.pop("password_input", None)
-        st.rerun()  # 認証成功と同時にクリーンに再描画してエラー残骸を一掃
+        st.rerun()
     else:
         st.error("パスワードが正しくありません。")
 
@@ -82,7 +83,7 @@ COOLDOWN_SECONDS = 2
 with st.sidebar:
     st.header("⚙️ システム構成")
     st.markdown("""
-    - **Security**: Password Protected (`708`)
+    - **Security**: Authorized Session
     - **Engine**: Gemini Flash (Dual Fallback)
     - **Architecture**: 6-Agent Consensus
     - **Pipeline**:
@@ -103,10 +104,11 @@ with st.sidebar:
 
     if st.button("ログアウト (再ロック)", use_container_width=True):
         st.session_state.authenticated = False
+        st.session_state.pop("custom_api_key", None)
         st.rerun()
 
 # ==========================================
-# 5. エージェントコア（スレッドセーフ版）
+# 5. エージェントコア（スレッドセーフ設計）
 # ==========================================
 def ask_agent(
     role_title: str,
@@ -160,32 +162,38 @@ with col_run:
     run_button = st.button("🚀 合議セッションを開始", type="primary", use_container_width=True)
 
 # ==========================================
-# 7. セッション実行
+# 7. セッション実行パイプライン（タイマー機能付き）
 # ==========================================
 if run_button:
     if not API_KEY:
-        st.error("Gemini APIキーが設定されていません。サイドバーからキーを入力するか、Streamlit Secretsに登録してください。")
+        st.error("Gemini APIキーが設定されていません。Secretsに登録するか、サイドバーから入力してください。")
     elif not user_theme.strip():
         st.warning("テーマを入力してください。")
     else:
+        total_start_time = time.time()
         with st.status("エージェントセッション実行中...", expanded=True) as status:
             # Phase 1: リーダー
+            t0 = time.time()
             status.write("👨‍💼 **チームリーダー** が課題設計と調査要件を定義中...")
             leader_prompt = (
                 "あなたは優秀なチームリーダーです。"
                 "ユーザーの入力テーマから、最終的な目標と、次のリサーチャーが調べるべき具体的な調査項目を3〜4つ箇条書きで定義してください。"
             )
             leader_out = ask_agent("リーダー", leader_prompt, user_theme)
+            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
 
             # Phase 2: リサーチャー
+            t0 = time.time()
             status.write("🔍 **リサーチャー** が客観的事実・先行事例・データを収集中...")
             researcher_prompt = (
                 "あなたは客観的なリサーチャーです。"
                 "リーダーの指示に従い、テーマに関する事実、データ、一般的な事例のみを収集・整理してください。個人の意見は不要です。"
             )
             research_out = ask_agent("リサーチャー", researcher_prompt, leader_out)
+            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
 
-            # Phase 3: 並列討論（メインスレッドから描画）
+            # Phase 3: 並列討論
+            t0 = time.time()
             status.write("⚡ **肯定派 vs 否定派** が並列スレッドで激論中...")
             promoter_prompt = (
                 "あなたは熱狂的なプロモーター（肯定派）です。"
@@ -201,8 +209,10 @@ if run_button:
                 f_redteam = executor.submit(ask_agent, "否定派", redteam_prompt, research_out)
                 promoter_out = f_promoter.result()
                 redteam_out = f_redteam.result()
+            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
 
             # Phase 4: モデレーター
+            t0 = time.time()
             status.write("⚖️ **モデレーター** がトレードオフを止揚し、最適解を調停中...")
             moderator_prompt = (
                 "あなたは冷静なモデレーターです。"
@@ -210,16 +220,24 @@ if run_button:
             )
             moderator_input = f"【肯定派の意見】\n{promoter_out}\n\n【否定派の意見】\n{redteam_out}"
             moderator_out = ask_agent("モデレーター", moderator_prompt, moderator_input)
+            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
 
             # Phase 5: プランナー
+            t0 = time.time()
             status.write("🗺️ **プランナー** が実行ロードマップを策定中...")
             planner_prompt = (
                 "あなたは実行力のあるプランナーです。"
                 "モデレーターの結論をもとに、ユーザーが明日から実行できる具体的なステップのロードマップを作成してください。"
             )
             planner_out = ask_agent("プランナー", planner_prompt, moderator_out)
+            status.write(f"└ 完了 ({time.time() - t0:.1f} 秒)")
 
-            status.update(label="✅ 全エージェントの合議プロセス完了", state="complete", expanded=False)
+            total_elapsed = time.time() - total_start_time
+            status.update(
+                label=f"✅ 全エージェントの合議プロセス完了 (合計: {total_elapsed:.1f} 秒)", 
+                state="complete", 
+                expanded=False
+            )
 
         # ==========================================
         # 8. 結果描画セクション
