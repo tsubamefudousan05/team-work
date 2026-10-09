@@ -1,6 +1,6 @@
 """
-Autonomous Multi-Agent Strategy Chamber (Refined Persona & Architecture Edition)
-冷静なプロフェッショナルトーン・スレッドセーフ・免責自動付与版
+Autonomous Multi-Agent Strategy Chamber (Executive Summary Edition)
+最上部エグゼクティブ・リード表示 & 全合議ダウンロード対応版
 """
 
 import streamlit as st
@@ -26,6 +26,13 @@ st.markdown("""
         border-radius: 8px; 
         border: 1px solid #2d3748; 
         background-color: #1a202c; 
+    }
+    .lead-box {
+        border-left: 5px solid #3b82f6;
+        background-color: #1e293b;
+        padding: 1.2rem;
+        border-radius: 6px;
+        margin-bottom: 1.5rem;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -70,7 +77,6 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-# 利用可能な現行高速・軽量モデル
 PRIMARY_MODEL = "gemini-3.5-flash-lite"
 FALLBACK_MODEL = "gemini-3-flash-preview"
 
@@ -93,6 +99,7 @@ with st.sidebar:
       3. ⚡ 肯定 vs 否定（並列討論）
       4. ⚖️ モデレーター（止揚・最適解）
       5. 🗺️ プランナー（工程表策定）
+      6. 🎯 エグゼクティブ・リード（総括抽出）
     """)
     st.divider()
 
@@ -196,7 +203,7 @@ if run_button:
                 research_out = ask_agent("リサーチャー", researcher_prompt, leader_out)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
-                # Phase 3: 並列討論（落ち着いたプロの論争）
+                # Phase 3: 並列討論
                 t0 = time.time()
                 status.write("⚡ **肯定派 vs 否定派** が並列スレッドで激論中...")
                 promoter_prompt = (
@@ -240,8 +247,26 @@ if run_button:
                 planner_out = ask_agent("プランナー", planner_prompt, moderator_out)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
+                # Phase 6: エグゼクティブ・リード生成
+                t0 = time.time()
+                status.write("🎯 **エグゼクティブ・リード** を抽出中...")
+                lead_prompt = (
+                    "あなたは経営陣向けのブリーフィングを担当するチーフストラテジストです。"
+                    "モデレーターの最適解とプランナーのロードマップから、最も重要な結論だけを抜き出した"
+                    "『エグゼクティブ・サマリー（リード文）』を作成してください。\n"
+                    "以下のフォーマットを厳守してください：\n"
+                    "【意思決定の結論】（1〜2行で本質的方針を明快に断言）\n"
+                    "- 採用モデル：〜\n"
+                    "- 最大の防御策（リスク遮断）：〜\n"
+                    "- 直近の最優先アクション（Next Action）：〜"
+                )
+                lead_input = f"【モデレーターの最適解】\n{moderator_out}\n\n【プランナーの工程表】\n{planner_out}"
+                lead_out = ask_agent("リード生成", lead_prompt, lead_input)
+                status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
+
+                total_time = time.time() - total_start
                 status.update(
-                    label=f"✅ 全合議プロセス完了 (総所要時間: {time.time() - total_start:.1f}秒)",
+                    label=f"✅ 全合議プロセス完了 (総所要時間: {total_time:.1f}秒)",
                     state="complete",
                     expanded=False
                 )
@@ -251,7 +276,11 @@ if run_button:
                 # ==========================================
                 st.divider()
 
-                with st.expander("📌 Phase 1 & 2: 前提設計とファクトデータ（リーダー＆リサーチャー）", expanded=True):
+                # 最上部：エグゼクティブ・リード（歌いだしハイライト）
+                st.markdown("### 🎯 Executive Summary（合議の総括・意思決定リード）")
+                st.info(lead_out)
+
+                with st.expander("📌 Phase 1 & 2: 前提設計とファクトデータ（リーダー＆リサーチャー）", expanded=False):
                     st.markdown("#### 👨‍💼 チームリーダーの要件定義")
                     st.markdown(leader_out)
                     st.markdown("---")
@@ -276,6 +305,47 @@ if run_button:
                 st.markdown("### 🗺️ Phase 5: 確定アクションロードマップ（プランナー）")
                 with st.container(border=True):
                     st.markdown(planner_out)
+
+                # ダウンロード用テキストの生成
+                full_report = f"""# 戦略合議レポート: {user_theme}
+実施日: {time.strftime('%Y-%m-%d %H:%M:%S')}
+所要時間: {total_time:.1f}秒
+
+## 🎯 Executive Summary
+{lead_out}
+
+---
+## Phase 1: チームリーダー要件定義
+{leader_out}
+
+---
+## Phase 2: リサーチャー調査結果
+{research_out}
+
+---
+## Phase 3: 対立討論
+### 推進派 (BizDev)
+{promoter_out}
+
+### 慎重派 (CRO)
+{redteam_out}
+
+---
+## Phase 4: 止揚・最適解 (モデレーター)
+{moderator_out}
+
+---
+## Phase 5: 確定アクションロードマップ (プランナー)
+{planner_out}
+"""
+                st.divider()
+                st.download_button(
+                    label="📥 全合議レポートをMarkdownでダウンロード",
+                    data=full_report,
+                    file_name="strategy_chamber_report.md",
+                    mime="text/markdown",
+                    use_container_width=True
+                )
 
                 st.caption("※ 本提案・工程表は自律型AIエージェントによる合議ドラフトです。実務導入時は関係法令・実勢相場等の専門的検証を行ってください。")
 
