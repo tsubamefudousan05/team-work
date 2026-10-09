@@ -42,6 +42,7 @@ def check_password():
     if st.session_state.get("password_input") == APP_PASSWORD:
         st.session_state.authenticated = True
         st.session_state.pop("password_input", None)
+        st.rerun()  # 認証成功と同時にクリーンに再描画してエラー残骸を一掃
     else:
         st.error("パスワードが正しくありません。")
 
