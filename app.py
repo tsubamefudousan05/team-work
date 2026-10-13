@@ -1,6 +1,6 @@
 """
-Autonomous Multi-Agent Strategy Chamber (Gorilla Taskforce Edition)
-総合戦略 / 法務 / 財務 / ゴリラ合議制 4チーム配備版
+Autonomous Multi-Agent Strategy Chamber (Gorilla & Multi-Taskforce Edition)
+認証安定化・4チームボタンスイッチ完全対応版
 """
 
 import streamlit as st
@@ -38,31 +38,25 @@ APP_PASSWORD = "708"
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
 
-def check_password():
-    input_pw = st.session_state.get("password_input", "")
-    if input_pw == APP_PASSWORD:
-        st.session_state.authenticated = True
-        st.session_state.pop("password_input", None)
-        st.rerun()
-    else:
-        st.error("パスワードが正しくありません。")
-
 if not st.session_state.authenticated:
     st.title("🔒 Access Restricted")
     st.caption("Autonomous Strategy Chamber")
     
-    col1, col2, _ = st.columns([2, 1, 3])
-    with col1:
-        st.text_input(
-            "パスワードを入力してください",
-            type="password",
-            key="password_input",
-            on_change=check_password
-        )
-    with col2:
-        st.write("")
-        st.write("")
-        st.button("解除", type="primary", on_click=check_password, use_container_width=True)
+    with st.form("auth_form"):
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            pw_input = st.text_input("パスワードを入力してください", type="password")
+        with col2:
+            st.write("")
+            st.write("")
+            submit = st.form_submit_button("解除", type="primary", use_container_width=True)
+            
+        if submit:
+            if pw_input == APP_PASSWORD:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.error("パスワードが正しくありません。")
     st.stop()
 
 # ==========================================
@@ -172,7 +166,6 @@ with st.sidebar:
 
     if st.button("ログアウト (再ロック)", use_container_width=True):
         st.session_state.authenticated = False
-        st.session_state.pop("custom_api_key", None)
         st.rerun()
 
 # ==========================================
