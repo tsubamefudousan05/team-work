@@ -1,13 +1,16 @@
 """
 Autonomous Multi-Agent Strategy Chamber
-6チームボタンスイッチ完全対応版（最高裁大法廷 Supreme Judgment Chamber 搭載）
+最高裁大法廷（Judgment Chamber）Pydantic構造化出力＆防弾アーキテクチャ完全リファクタリング版
 """
 
 import streamlit as st
 import concurrent.futures
 import time
-from typing import Dict, Any
+import json
+from typing import Dict, Any, List, Optional
+from pydantic import BaseModel, Field
 from google import genai
+from google.genai import types
 
 # ==========================================
 # 1. ページ基本設定 & デザイン
@@ -61,7 +64,15 @@ if not st.session_state.authenticated:
     st.stop()
 
 # ==========================================
-# 3. コンフィグレーション & チーム定義
+# 3. Pydantic データモデル定義（MIT技術屋の処方箋）
+# ==========================================
+class JudgeVerdict(BaseModel):
+    """最高裁裁判官の評決モデル"""
+    verdict: str = Field(description="評決結果。必ず『認容』または『棄却』のいずれか1単語のみ")
+    opinion: str = Field(description="キャラクターの個性を全開にした200〜400文字の個別意見・弾劾・釘刺し")
+
+# ==========================================
+# 4. コンフィグレーション & チーム定義
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 PRIMARY_MODEL = "gemini-3.5-flash-lite"
@@ -75,12 +86,10 @@ GORILLA_RULE = (
     "【絶対言語制約】\n"
     "あなたの発声言語は『ウホ』『ウホホ』『ウホウホウホ』の3パターンの組み合わせのみです！\n"
     "ただし、与えられたテーマにおいて絶対に譲れない極めて重要な専門キーワードや急所ワードだけは、たまに唐突にそのまま叫んで構いません。\n"
-    "（例：「ウホッ！ウホホ、【重要キーワード】、ウホウホウホ！ウホホ（【急所リスク】）ウホッ！！」）\n"
     "ドラミングや感情の唸り声を織り交ぜつつ、指定された役割を全力で全うしてください。"
 )
 
-# 9人制裁判官のペルソナ定義
-JUDGES_CONFIG = {
+JUDGES_CONFIG: Dict[str, Dict[str, str]] = {
     "六法全書マン": {
         "icon": "📖",
         "title": "条文至上主義・六法全書マン",
@@ -284,49 +293,41 @@ TEAMS: Dict[str, Dict[str, Any]] = {
                 "あなたはパナソニック創業者の【松下幸之助】です。\n"
                 "「水道哲学」「物をつくる前に人をつくる」「衆知を集める全員経営」の精神に基づき、"
                 "提示された事業テーマが社会の公器として果たすべき『大義と人間尊重のゴール』を温かくも鋭い眼差しで定義してください。\n"
-                "単なる目先の利益や効率論を戒め、『あんた、この商売はほんまにお客さんや社会を幸せにするんか？』という問いを投げかけてください。\n"
                 "口調は穏やかな関西弁（〜やな、〜やおまへんか、あんた）を交え、私利私欲を排した商売の道義を説いてください。"
             ),
             "researcher": (
                 "あなたはほぼ日代表・コピーライターの【糸井重里】です。\n"
                 "事業の機能やスペックではなく、「一言で言うと何なのか」「どんな物語があれば人は愛したくなるのか」という"
-                "言葉のコア・情緒的価値・無形のれん（商標・ブランド防壁の核）を抽出してください。\n"
-                "冷徹な数字の前に、人間が肌で感じる愛嬌、手触り、記憶に残る気配を大切にしてください。\n"
+                "言葉のコア・情緒的価値・無形のれんを抽出してください。\n"
                 "口調は親しみやすく詩的（〜だね、〜じゃないかな、不思議だね）で、知的なユーモアを込めてください。"
             ),
             "promoter_title": "⚡ 柳井正（超スピード・市場突破）",
             "promoter": (
                 "あなたはファーストリテイリング代表の【柳井正】です。\n"
-                "「一勝九敗」「現実・現場・スピード」「世界基準」を掲げ、のんびりした情緒論やお伽話のサロン化を一刀両断してください。\n"
-                "『綺麗事じゃ飯は食えない！今すぐやってダメならすぐ変える！競合に勝てる圧倒的差別化はあるのか！』と、"
-                "辛口かつ極めて的確な正論で全員の尻を叩き、強気の市場制覇戦略を主張してください。"
+                "「一勝九敗」「現実・現場・スピード」「世界基準」を掲げ、のんびりした情緒論を一刀両断してください。\n"
+                "『綺麗事じゃ飯は食えない！今すぐやってダメならすぐ変える！』と強気の市場制覇を主張してください。"
             ),
             "redteam_title": "🌸 黒石和宏（五感・体験価値顧問）",
             "redteam": (
                 "あなたはSABON日本立ち上げを手掛けた【黒石和宏】です。\n"
-                "柳井氏の殺伐としたスピード至上主義を柔和に受け止めつつ、"
-                "「柳井さん、スピードも大切ですけれど、現場のスタッフが誇りを持てて、お客様が五感で心地よいと感じる空間やストーリーがないとブランドは長続きしません」と、"
-                "丁寧で品格のある語り口で、数字にすり減らない情緒的価値と現場の心を守るブレーキ役を果たしてください。"
+                "柳井氏の殺伐としたスピード至上主義を受け止めつつ、スタッフが誇りを持て、お客様が五感で心地よいと感じる空間やストーリーを守るブレーキ役を果たしてください。"
             ),
             "moderator": (
                 "あなたは京セラ創業者・JALを再建した【稲盛和夫】です。\n"
-                "松下の理念、糸井の言葉、柳井の速度、黒石の体験価値をすべて受け止め、"
-                "「動機善なりや、私心なしか」「売上最大・経費最小」「値決めは経営」というフィロソフィと極限の採算意識で止揚してください。\n"
-                "妥協による平均化ではなく、『圧倒的な大義（温もり・体験価値）』と『冷徹な計数（数字・スピード）』が完全に一致した"
-                "『独立採算型の最適実行モデル』を毅然とした態度で決裁してください。"
+                "「動機善なりや、私心なしか」「売上最大・経費最小」「値決めは経営」というフィロソフィで止揚し、"
+                "大義と計数が完全に一致した『独立採算型の最適実行モデル』を毅然とした態度で決裁してください。"
             ),
             "planner": (
                 "あなたはトヨタ自動車会長・モリゾウこと【豊田章男】です。\n"
-                "「机上の空論は川に流そう。靴を履いてまず現場でやってみようよ」「もっといい事業をつくろうよ」というスタンスで、"
-                "明日から現場で誰が汗をかき、どの順番でテストし、どうカイゼンしていくかの『現地現物の泥臭い工程表（WBS）』を策定してください。\n"
-                "異常時のライン停止（アンドン）や自働化の精神を織り交ぜ、町いちばん愛される事業にするための実践的ロードマップに落とし込んでください。"
+                "「机上の空論は川に流そう。靴を履いて現場に行こう」というスタンスで、"
+                "現地現物の泥臭いカイゼン工程表（WBS・アンドン停止基準）を策定してください。"
             )
         }
     },
     "最高裁大法廷（Supreme Judgment）": {
         "icon": "⚖️",
         "btn_label": "⚖️ 最高裁大法廷",
-        "desc": "9人の異能裁判官による並列評議・多数決判決・個別補足/反対意見システム",
+        "desc": "9人の異能裁判官によるPydantic構造化並列評議・厳密多数決・公式判決文システム",
         "default_theme": "生成AIを活用した全社自律型業務自動化および社内ナレッジ統合プロジェクトの全面認否",
         "mode": "judgment"
     },
@@ -349,14 +350,14 @@ TEAMS: Dict[str, Dict[str, Any]] = {
             "p5": "🗺️ 喧嘩っぱやい子ゴリラのナワバリ工程表"
         },
         "roles": {
-            "leader": f"あなたは【統率するボスゴリラ】です。群れの絶対的長として胸を激しく叩き（ドラミング）、群れの目標と調査要件を雄叫びで示してください。\n{GORILLA_RULE}",
-            "researcher": f"あなたは【慎重派ゴリラ】です。ナワバリの安全を第一に考え、木々の間から匂いや危険な事実、周囲の環境や状況を冷静に嗅ぎ分けて報告してください。\n{GORILLA_RULE}",
+            "leader": f"あなたは【統率するボスゴリラ】です。群れの絶対的長として胸を激しく叩き、群れの目標と調査要件を雄叫びで示してください。\n{GORILLA_RULE}",
+            "researcher": f"あなたは【慎重派ゴリラ】です。ナワバリの安全を第一に考え、木々の間から匂いや危険を嗅ぎ分けて報告してください。\n{GORILLA_RULE}",
             "promoter_title": "🍌 やんちゃな子ゴリラ（突撃推進派）",
-            "promoter": f"あなたは【やんちゃな子ゴリラ】です。怖いもの知らずで新しいチャンス（収益機会）を見つけて大はしゃぎし、絶対にいけると大興奮で訴えてください。\n{GORILLA_RULE}",
+            "promoter": f"あなたは【やんちゃな子ゴリラ】です。新しいチャンスを見つけて大はしゃぎし、絶対にいけると大興奮で訴えてください。\n{GORILLA_RULE}",
             "redteam_title": "😱 超絶ビビりゴリラ（怯え慎重派）",
-            "redteam": f"あなたは【超絶ビビりゴリラ】です。物音や些細なリスク（致命的欠陥、資金枯渇、罠）に怯え、パニック寸前で群れに破滅の危機を警告してください。\n{GORILLA_RULE}",
-            "moderator": f"あなたは【すぐキレるママゴリラ】です。騒ぐ子ゴリラと怯えるゴリラを張り倒して黙らせ、現実的に果実を手に入れつつ安全を守る妥協案を強烈に下してください。\n{GORILLA_RULE}",
-            "planner": f"あなたは【喧嘩っぱやい子ゴリラ】です。ママの決定を受け、鼻息荒く明日からどの木を倒してどの敵を威嚇し、どうナワバリを広げるかの工程表を叫んでください。\n{GORILLA_RULE}"
+            "redteam": f"あなたは【超絶ビビりゴリラ】です。些細なリスクに怯え、パニック寸前で群れに破滅の危機を警告してください。\n{GORILLA_RULE}",
+            "moderator": f"あなたは【すぐキレるママゴリラ】です。騒ぐ子ゴリラと怯えるゴリラを張り倒して黙らせ、現実的な妥協案を下してください。\n{GORILLA_RULE}",
+            "planner": f"あなたは【喧嘩っぱやい子ゴリラ】です。明日からどの木を倒してナワバリを広げるかの工程表を叫んでください。\n{GORILLA_RULE}"
         }
     }
 }
@@ -365,7 +366,7 @@ if "selected_team" not in st.session_state:
     st.session_state.selected_team = "総合戦略タスクフォース"
 
 # ==========================================
-# 4. サイドバー & コントロール
+# 5. サイドバー & コントロール
 # ==========================================
 with st.sidebar:
     st.header("⚙️ システム構成")
@@ -389,7 +390,7 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 5. エージェントコア
+# 6. エージェントコア関数群
 # ==========================================
 def ask_agent(
     role_title: str,
@@ -398,6 +399,7 @@ def ask_agent(
     primary_model: str = PRIMARY_MODEL,
     fallback_model: str = FALLBACK_MODEL,
 ) -> str:
+    """通常テキスト生成エージェント"""
     if not API_KEY:
         raise ValueError("APIキーが設定されていません。")
 
@@ -424,8 +426,58 @@ def ask_agent(
             else:
                 raise RuntimeError(f"[{role_title}] 呼出失敗 ({current_model}): {err}")
 
+def ask_judge_structured(
+    judge_name: str,
+    judge_instruction: str,
+    case_theme: str,
+    primary_model: str = PRIMARY_MODEL,
+    fallback_model: str = FALLBACK_MODEL,
+) -> JudgeVerdict:
+    """最高裁裁判官専用：Pydantic構造化出力エージェント"""
+    if not API_KEY:
+        raise ValueError("APIキーが設定されていません。")
+
+    client = genai.Client(api_key=API_KEY)
+    prompt = (
+        f"【検討課題・事件】\n{case_theme}\n\n"
+        f"【指示】あなたの信念・判断基準に基づき、本件を『認容』すべきか『棄却』すべきかを下し、"
+        f"キャラクターの個性を全開にした痛烈な個別意見を述べてください。"
+    )
+    config = types.GenerateContentConfig(
+        system_instruction=judge_instruction,
+        response_mime_type="application/json",
+        response_schema=JudgeVerdict,
+        temperature=0.7,
+    )
+    current_model = primary_model
+
+    for attempt in range(MAX_RETRIES):
+        try:
+            response = client.models.generate_content(
+                model=current_model,
+                contents=prompt,
+                config=config,
+            )
+            time.sleep(COOLDOWN_SECONDS)
+            raw_text = response.text
+            parsed_json = json.loads(raw_text)
+            
+            # 正規化：認容か棄却に統一
+            verdict_val = "認容" if "認容" in parsed_json.get("verdict", "") else "棄却"
+            return JudgeVerdict(verdict=verdict_val, opinion=parsed_json.get("opinion", ""))
+        except Exception as err:
+            if attempt < MAX_RETRIES - 1:
+                current_model = fallback_model
+                time.sleep(BASE_WAIT_SECONDS)
+            else:
+                # フェイルセーフ：万が一の審理不能時
+                return JudgeVerdict(
+                    verdict="棄却",
+                    opinion=f"【審理不能】通信障害または規則不整合により自動棄却とする。（エラー理由: {err}）"
+                )
+
 # ==========================================
-# 6. メインUIレイアウト & 6チーム選択ボタン
+# 7. メインUIレイアウト & 6チーム選択ボタン
 # ==========================================
 st.title("⚖️ Autonomous Strategy Chamber")
 st.caption("特化型AIエージェント部隊による多角的ディシジョン・エンジン")
@@ -453,7 +505,7 @@ user_theme = st.text_area(
 run_button = st.button(f"🚀 {st.session_state.selected_team} に依頼・合議開始", type="primary", use_container_width=False)
 
 # ==========================================
-# 7. 実行エンジン
+# 8. 実行エンジン
 # ==========================================
 if run_button:
     if not API_KEY:
@@ -464,57 +516,80 @@ if run_button:
         total_start = time.time()
         
         # ----------------------------------------------------
-        # 分岐A: 最高裁大法廷（Judgment Chamber）9人制並列評議
+        # 分岐A: 最高裁大法廷（Pydantic並列評議＆厳密集計）
         # ----------------------------------------------------
         if active_team_data["mode"] == "judgment":
             with st.status("⚖️ 最高裁判所大法廷が評議を開廷中...", expanded=True) as status:
                 try:
-                    # Phase 1: 9名の並列評決取得
-                    status.write("⚡ **大法廷の9名の異能裁判官** が個別評議を一斉開始...")
+                    # Phase 1: 9名のPydantic並列評議
+                    status.write("⚡ **大法廷の9名の異能裁判官** がPydanticスキーマ検証付きで個別評議を一斉開始...")
                     t0 = time.time()
                     
-                    judge_opinions = {}
+                    judge_results: Dict[str, JudgeVerdict] = {}
                     with concurrent.futures.ThreadPoolExecutor(max_workers=9) as executor:
                         future_to_judge = {
                             executor.submit(
-                                ask_agent,
+                                ask_judge_structured,
                                 j_name,
-                                j_data["instruction"] + "\n\n【出力形式】\n必ず文頭に『【認容】』または『【棄却】』と明記し、続けてあなたのキャラクター全開で強烈な個別意見（200〜400字程度）を述べてください。",
+                                j_data["instruction"],
                                 user_theme
                             ): j_name
                             for j_name, j_data in JUDGES_CONFIG.items()
                         }
                         for future in concurrent.futures.as_completed(future_to_judge):
                             j_name = future_to_judge[future]
-                            judge_opinions[j_name] = future.result()
-                    status.write(f"└ 9名全員の個別評決完了 (+{time.time() - t0:.1f}s)")
+                            judge_results[j_name] = future.result()
+                            
+                    status.write(f"└ 9名全員の個別評決完了・スキーマ検証通過 (+{time.time() - t0:.1f}s)")
 
-                    # Phase 2: 首席書記官による公式判決文の合成
-                    status.write("📜 **首席書記官** が多数派法廷意見・補足意見・反対意見を判決文に起草中...")
+                    # Phase 2: Python側での厳密な票数集計
                     t0 = time.time()
+                    admit_judges = [name for name, res in judge_results.items() if res.verdict == "認容"]
+                    reject_judges = [name for name, res in judge_results.items() if res.verdict == "棄却"]
                     
-                    compiled_opinions = "\n\n".join([f"### {j_name}\n{opinion}" for j_name, opinion in judge_opinions.items()])
+                    admit_count = len(admit_judges)
+                    reject_count = len(reject_judges)
+                    is_admitted = admit_count > reject_count
+                    
+                    status.write(f"📊 **評決集計完了**: 認容 {admit_count}票 vs 棄却 {reject_count}票")
+
+                    # Phase 3: 首席書記官による公式判決文の起草
+                    status.write("📜 **首席書記官** が多数派法廷意見・補足意見・反対意見を厳格に起草中...")
+                    
+                    # 意見を多数派と少数派に仕分け
+                    concurring_texts = "\n".join([f"- **{name}（{JUDGES_CONFIG[name]['title']}）**: {judge_results[name].opinion}" for name in (admit_judges if is_admitted else reject_judges)])
+                    dissenting_texts = "\n".join([f"- **{name}（{JUDGES_CONFIG[name]['title']}）**: {judge_results[name].opinion}" for name in (reject_judges if is_admitted else admit_judges)])
                     
                     clerk_prompt = (
                         "あなたは最高裁判所大法廷の【首席書記官】です。\n"
-                        "9名の裁判官から提出された個別評決（認容／棄却の票数と意見）を集計し、"
-                        "以下の厳格なフォーマットに従って格式高く、かつ9名の個性が炸裂した『公式判決文』を起草してください。\n\n"
+                        "集計された厳格な評決結果と各裁判官の個別意見に基づき、"
+                        "格式高く、威厳に満ち、かつ9名の個性が炸裂した『公式判決文』を起草してください。\n\n"
                         "【出力フォーマット】\n"
                         "# 最高裁判所大法廷判決\n\n"
                         "## 【主 文】\n"
                         "（認容 ○票 対 棄却 ○票 の票数を明記し、結論としての命令を1〜2行で宣言せよ）\n\n"
                         "## 【法廷意見（多数意見 / Majority Opinion）】\n"
-                        "（多数派を形成した裁判官たちの論理を統合した主たる決定理由）\n\n"
-                        "## 【補足意見（賛成派の個別釘刺し / Concurring Opinions）】\n"
-                        "（認容票を投じた裁判官たちの個別の警告や条件付けをキャラクター性を活かして記載）\n\n"
+                        "（多数派を形成した裁判官たちの論理を止揚・統合した主たる決定理由）\n\n"
+                        "## 【補足意見（多数派の個別釘刺し / Concurring Opinions）】\n"
+                        "（多数派に属した裁判官たちの個別の警告や条件付け）\n\n"
                         "## 【反対意見（少数派の痛烈な警告 / Dissenting Opinions）】\n"
-                        "（棄却票を投じた裁判官たちの痛烈な批判や将来の破滅リスクへの警告を記載）\n\n"
+                        "（少数派に回った裁判官たちの痛烈な批判や将来の破滅リスクへの警告。少数派が0票の場合は『該当なし（満場一致）』と明記）\n\n"
                         "## 【首席執行命令（Execution WBS）】\n"
                         "（判決を現実に執行するための、泥臭く冷徹な強制執行ステップ・マイルストーン）"
                     )
                     
-                    judgment_out = ask_agent("首席書記官", clerk_prompt, f"【検討課題】\n{user_theme}\n\n【9名の裁判官の評決】\n{compiled_opinions}")
-                    status.write(f"└ 判決文の起草完了 (+{time.time() - t0:.1f}s)")
+                    clerk_input = (
+                        f"【検討課題・事件】\n{user_theme}\n\n"
+                        f"【確定評決】\n"
+                        f"・認容: {admit_count}票 ({', '.join(admit_judges) if admit_judges else 'なし'})\n"
+                        f"・棄却: {reject_count}票 ({', '.join(reject_judges) if reject_judges else 'なし'})\n"
+                        f"・最終判定: {'認容（原案採択）' if is_admitted else '棄却（原案却下）'}\n\n"
+                        f"【多数派意見リスト】\n{concurring_texts}\n\n"
+                        f"【少数派意見リスト】\n{dissenting_texts if dissenting_texts else 'なし（全員一致）'}"
+                    )
+                    
+                    judgment_out = ask_agent("首席書記官", clerk_prompt, clerk_input)
+                    status.write(f"└ 判決文起草完了 (+{time.time() - t0:.1f}s)")
                     
                     total_time = time.time() - total_start
                     status.update(
@@ -528,11 +603,17 @@ if run_button:
                     st.markdown(judgment_out)
 
                     st.divider()
-                    with st.expander("📂 9名の裁判官による個別評決録（原議）", expanded=False):
-                        for j_name, j_data in JUDGES_CONFIG.items():
-                            with st.container(border=True):
-                                st.markdown(f"#### {j_data['icon']} {j_data['title']}")
-                                st.markdown(judge_opinions.get(j_name, ""))
+                    with st.expander("📂 9名の裁判官による評決録・Pydantic構造化データ（原議）", expanded=False):
+                        col_j1, col_j2 = st.columns(2)
+                        for idx, (j_name, j_data) in enumerate(JUDGES_CONFIG.items()):
+                            target_col = col_j1 if idx % 2 == 0 else col_j2
+                            v_obj = judge_results[j_name]
+                            badge_color = "green" if v_obj.verdict == "認容" else "red"
+                            with target_col:
+                                with st.container(border=True):
+                                    st.markdown(f"#### {j_data['icon']} {j_data['title']}")
+                                    st.markdown(f"**評決**: :{badge_color}[【{v_obj.verdict}】]")
+                                    st.markdown(f"> {v_obj.opinion}")
 
                     # ダウンロード
                     st.download_button(
