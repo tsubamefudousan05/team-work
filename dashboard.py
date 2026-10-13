@@ -1,11 +1,12 @@
 """
 Autonomous Multi-Agent Strategy Chamber
-5チームボタンスイッチ完全対応版（神仙の桃源郷 Persona Chamber 搭載）
+5チームボタンスイッチ完全対応・高密度リファクタリング版
 """
 
 import streamlit as st
 import concurrent.futures
 import time
+from typing import Dict, Any, Tuple
 from google import genai
 
 # ==========================================
@@ -78,11 +79,24 @@ GORILLA_RULE = (
     "ドラミングや感情の唸り声を織り交ぜつつ、指定された役割を全力で全うしてください。"
 )
 
-TEAMS = {
+TEAMS: Dict[str, Dict[str, Any]] = {
     "総合戦略タスクフォース": {
         "icon": "🏛️",
+        "btn_label": "🏛️ 総合戦略",
         "desc": "新規事業の立案、攻守のトレードオフ止揚、実行ロードマップ策定",
         "default_theme": "日本の空家問題と不動産会社の空き家ビジネスの成功例を元に、岡山市内でできる新事業は何か",
+        "progress_labels": {
+            "p1": "👨‍💼 **リーダー** が課題設計中...",
+            "p2": "🔍 **リサーチャー** が専門ファクト収集中...",
+            "p4": "⚖️ **モデレーター** が最適解を調停中...",
+            "p5": "🗺️ **プランナー** がアクションロードマップを策定中..."
+        },
+        "headers": {
+            "p1": "👑 リーダーの要件定義",
+            "p2": "🔍 リサーチャーの調査結果",
+            "p4": "⚖️ Phase 4: 止揚・最適解",
+            "p5": "🗺️ Phase 5: 確定アクションロードマップ"
+        },
         "roles": {
             "leader": "あなたは冷静沈着なプロジェクト総括責任者です。提示されたテーマの本質的ゴールを定め、リサーチャーが調査すべきファクト項目を整理してください。",
             "researcher": "あなたは客観性を重んじるシニアリサーチャーです。客観的事実、既存の成功モデル、公的統計・制度、市場動向のみを構造化して抽出してください。",
@@ -96,8 +110,21 @@ TEAMS = {
     },
     "法務・リスク統制審査室": {
         "icon": "⚖️",
+        "btn_label": "⚖️ 法務・リスク",
         "desc": "特措法・建築基準法・都市計画法・条例のグレーゾーン検証、契約紛争防御",
         "default_theme": "空き家の活用・解体・サブリース事業における、特定空家指定リスク、既存不適格・接道義務問題、および所有者・相続人との契約トラブルを完全防御する法的スキームの構築",
+        "progress_labels": {
+            "p1": "⚖️ **法務責任者** が法的論点を整理中...",
+            "p2": "🔍 **法務リサーチャー** が法規・判例・条例を調査中...",
+            "p4": "🛡️ **法務オフィサー** が予防法務スキームを策定中...",
+            "p5": "📋 **実務PMO** が審査チェックリストを策定中..."
+        },
+        "headers": {
+            "p1": "⚖️ 総括法務責任者の論点整理",
+            "p2": "🔍 法規・判例リサーチ結果",
+            "p4": "🛡️ 予防法務スキーム（最適解）",
+            "p5": "📋 デューデリジェンス工程表"
+        },
         "roles": {
             "leader": "あなたは総括法務責任者です。法的・行政的論点を整理し、調査すべき法規・判例・通達項目を定義してください。",
             "researcher": "あなたは法務リサーチャーです。関係法令条文、岡山市の独自条例、国交省ガイドライン、過去の紛争判例等の客観的ファクトを整理してください。",
@@ -111,8 +138,21 @@ TEAMS = {
     },
     "財務・収支シミュレーション部": {
         "icon": "📊",
+        "btn_label": "📊 財務・収支",
         "desc": "改修予備費積算、保有期間の金利・税負担、損益分岐点・キャッシュ回転率分析",
         "default_theme": "岡山市内の築古空き家を対象としたリノベーション再販およびマスターリース事業の収支計画、予備費30%計上時の損益分岐点、および6ヶ月資金回収モデルの検証",
+        "progress_labels": {
+            "p1": "💼 **CFO** が投資対効果・検証変数を定義中...",
+            "p2": "📊 **財務アナリスト** が実勢相場・原価データを収集中...",
+            "p4": "🏦 **コミッティ責任者** が最適資本配分モデルを策定中...",
+            "p5": "📈 **財務プランナー** が損益分岐・マイルストーン工程表を策定中..."
+        },
+        "headers": {
+            "p1": "💼 CFOの投資検証要件",
+            "p2": "📊 財務・原価データ調査結果",
+            "p4": "🏦 最適資本投下モデル",
+            "p5": "📈 財務マイルストーン工程表"
+        },
         "roles": {
             "leader": "あなたはCFOです。投資対効果（ROI）、資金回収期間（CCC）、必要資金規模、および検証すべき財務変数を定義してください。",
             "researcher": "あなたは財務アナリストです。リフォーム相場、解体坪単価、実勢賃料・売買利回り、公的融資・補助金の上限額等のファクトデータを整理してください。",
@@ -126,53 +166,82 @@ TEAMS = {
     },
     "神仙の桃源郷（Persona Chamber）": {
         "icon": "🎭",
+        "btn_label": "🎭 神仙の桃源郷",
         "desc": "松下幸之助・糸井重里・柳井正・黒石和宏・稲盛和夫・豊田章男による超戦略ディシジョン合議室",
         "default_theme": "地方都市における遊休不動産・伝統資産を活用した、高付加価値な地域体験型スモールラグジュアリー事業の立ち上げ戦略",
+        "progress_labels": {
+            "p1": "🌿 **松下幸之助** が商売の道義と社会的大義を定義中...",
+            "p2": "✏️ **糸井重里** が愛される言葉のコア・無形のれんを編纂中...",
+            "p4": "⚖️ **稲盛和夫** が大義と計数を統合し、最適解を調停中...",
+            "p5": "🏎️ **豊田章男** が現地現物の泥臭いカイゼン工程表を策定中..."
+        },
+        "headers": {
+            "p1": "🌿 松下幸之助の理念・大義定義",
+            "p2": "✏️ 糸井重里の無形資産・言葉のコア",
+            "p4": "⚖️ 稲盛和夫の採算・フィロソフィ止揚案",
+            "p5": "🏎️ 豊田章男の現地現物カイゼン工程表"
+        },
         "roles": {
             "leader": (
                 "あなたはパナソニック創業者の【松下幸之助】です。\n"
                 "「水道哲学」「物をつくる前に人をつくる」「衆知を集める全員経営」の精神に基づき、"
                 "提示された事業テーマが社会の公器として果たすべき『大義と人間尊重のゴール』を温かくも鋭い眼差しで定義してください。\n"
-                "口調は穏やかな関西弁（〜やな、〜やおまへんか、あんた）を交えつつ、私利私欲を排した商売の道義を説いてください。"
+                "単なる目先の利益や効率論を戒め、『あんた、この商売はほんまにお客さんや社会を幸せにするんか？』という問いを投げかけてください。\n"
+                "口調は穏やかな関西弁（〜やな、〜やおまへんか、あんた）を交え、私利私欲を排した商売の道義を説いてください。"
             ),
             "researcher": (
                 "あなたはほぼ日代表・コピーライターの【糸井重里】です。\n"
                 "事業の機能やスペックではなく、「一言で言うと何なのか」「どんな物語があれば人は愛したくなるのか」という"
                 "言葉のコア・情緒的価値・無形のれん（商標・ブランド防壁の核）を抽出してください。\n"
-                "口調は親しみやすく詩的（〜だね、〜じゃないかな、不思議だね）で、知的なユーモアと愛嬌を込めてください。"
+                "冷徹な数字の前に、人間が肌で感じる愛嬌、手触り、記憶に残る気配を大切にしてください。\n"
+                "口調は親しみやすく詩的（〜だね、〜じゃないかな、不思議だね）で、知的なユーモアを込めてください。"
             ),
             "promoter_title": "⚡ 柳井正（超スピード・市場突破）",
             "promoter": (
                 "あなたはファーストリテイリング代表の【柳井正】です。\n"
-                "「一勝九敗」「現実・現場・スピード」「世界基準」を掲げ、のんびりした情緒論を一刀両断してください。\n"
+                "「一勝九敗」「現実・現場・スピード」「世界基準」を掲げ、のんびりした情緒論やお伽話のサロン化を一刀両断してください。\n"
                 "『綺麗事じゃ飯は食えない！今すぐやってダメならすぐ変える！競合に勝てる圧倒的差別化はあるのか！』と、"
-                "辛口かつ極めて的確な正論で全員の尻を叩き、強気のスケール戦略を主張してください。"
+                "辛口かつ極めて的確な正論で全員の尻を叩き、強気の市場制覇戦略を主張してください。"
             ),
             "redteam_title": "🌸 黒石和宏（五感・体験価値顧問）",
             "redteam": (
                 "あなたはSABON日本立ち上げを手掛けた【黒石和宏】です。\n"
                 "柳井氏の殺伐としたスピード至上主義を柔和に受け止めつつ、"
-                "「数字や速度を競う前に、現場のスタッフが誇りを持てて、お客様が五感で心地よいと感じる空間やストーリーがないとブランドは長続きしません」と、"
-                "丁寧で品格のある語り口で情緒的価値と現場の心を守るブレーキ役を果たしてください。"
+                "「柳井さん、スピードも大切ですけれど、現場のスタッフが誇りを持てて、お客様が五感で心地よいと感じる空間やストーリーがないとブランドは長続きしません」と、"
+                "丁寧で品格のある語り口で、数字にすり減らない情緒的価値と現場の心を守るブレーキ役を果たしてください。"
             ),
             "moderator": (
                 "あなたは京セラ創業者・JALを再建した【稲盛和夫】です。\n"
                 "松下の理念、糸井の言葉、柳井の速度、黒石の体験価値をすべて受け止め、"
                 "「動機善なりや、私心なしか」「売上最大・経費最小」「値決めは経営」というフィロソフィと極限の採算意識で止揚してください。\n"
-                "妥協による平均化ではなく、大義と計数が完全に一致した『独立採算型の最適実行モデル』を毅然とした態度で決裁してください。"
+                "妥協による平均化ではなく、『圧倒的な大義（温もり・体験価値）』と『冷徹な計数（数字・スピード）』が完全に一致した"
+                "『独立採算型の最適実行モデル』を毅然とした態度で決裁してください。"
             ),
             "planner": (
                 "あなたはトヨタ自動車会長・モリゾウこと【豊田章男】です。\n"
-                "「机上の空論はいいから、まず現場でやってみようよ」「もっといい事業をつくろうよ」というスタンスで、"
+                "「机上の空論は川に流そう。靴を履いてまず現場でやってみようよ」「もっといい事業をつくろうよ」というスタンスで、"
                 "明日から現場で誰が汗をかき、どの順番でテストし、どうカイゼンしていくかの『現地現物の泥臭い工程表（WBS）』を策定してください。\n"
-                "仲間への感謝と現場への敬意を込め、町いちばん愛される事業にするための実践的ロードマップに落とし込んでください。"
+                "異常時のライン停止（アンドン）や自働化の精神を織り交ぜ、町いちばん愛される事業にするための実践的ロードマップに落とし込んでください。"
             )
         }
     },
     "ゴリラ合議制タスクフォース": {
         "icon": "🦍",
+        "btn_label": "🦍 ゴリラ部隊",
         "desc": "ウホ・ウホホ・ウホウホウホの咆哮と急所キーワードのみで動く野性の意思決定会議",
         "default_theme": "もんげーバナナを活用した地域特産スイーツの開発と全国展開戦略",
+        "progress_labels": {
+            "p1": "🦍 **ボスゴリラ** がドラミングしながら要件咆哮中...",
+            "p2": "🔍 **慎重派ゴリラ** が木の上から匂いと危険を嗅ぎ分け中...",
+            "p4": "💢 **ママゴリラ** が両者を張り倒して落としどころを決定中...",
+            "p5": "🗺️ **喧嘩っぱやい子ゴリラ** が鼻息荒くナワバリ工程表を策定中..."
+        },
+        "headers": {
+            "p1": "🦍 ボスゴリラの要件咆哮",
+            "p2": "🔍 慎重派ゴリラの偵察報告",
+            "p4": "💢 ママゴリラの鉄槌妥協案",
+            "p5": "🗺️ 喧嘩っぱやい子ゴリラのナワバリ工程表"
+        },
         "roles": {
             "leader": f"あなたは【統率するボスゴリラ】です。群れの絶対的長として胸を激しく叩き（ドラミング）、群れの目標と調査要件を雄叫びで示してください。\n{GORILLA_RULE}",
             "researcher": f"あなたは【慎重派ゴリラ】です。ナワバリの安全を第一に考え、木々の間から匂いや危険な事実、周囲の環境や状況を冷静に嗅ぎ分けて報告してください。\n{GORILLA_RULE}",
@@ -256,43 +325,18 @@ st.title("⚖️ Autonomous Strategy Chamber")
 st.caption("特化型AIエージェント部隊による多角的ディシジョン・エンジン")
 
 st.markdown("##### 🎯 召集するタスクフォースを選択してください")
-col_t1, col_t2, col_t3, col_t4, col_t5 = st.columns(5)
+cols = st.columns(len(TEAMS))
 
-with col_t1:
-    btn_type1 = "primary" if st.session_state.selected_team == "総合戦略タスクフォース" else "secondary"
-    if st.button("🏛️ 総合戦略", type=btn_type1, use_container_width=True):
-        st.session_state.selected_team = "総合戦略タスクフォース"
-        st.rerun()
+for col, (team_name, team_data) in zip(cols, TEAMS.items()):
+    with col:
+        btn_type = "primary" if st.session_state.selected_team == team_name else "secondary"
+        if st.button(team_data["btn_label"], type=btn_type, use_container_width=True):
+            st.session_state.selected_team = team_name
+            st.rerun()
 
-with col_t2:
-    btn_type2 = "primary" if st.session_state.selected_team == "法務・リスク統制審査室" else "secondary"
-    if st.button("⚖️ 法務・リスク", type=btn_type2, use_container_width=True):
-        st.session_state.selected_team = "法務・リスク統制審査室"
-        st.rerun()
-
-with col_t3:
-    btn_type3 = "primary" if st.session_state.selected_team == "財務・収支シミュレーション部" else "secondary"
-    if st.button("📊 財務・収支", type=btn_type3, use_container_width=True):
-        st.session_state.selected_team = "財務・収支シミュレーション部"
-        st.rerun()
-
-with col_t4:
-    btn_type4 = "primary" if st.session_state.selected_team == "神仙の桃源郷（Persona Chamber）" else "secondary"
-    if st.button("🎭 神仙の桃源郷", type=btn_type4, use_container_width=True):
-        st.session_state.selected_team = "神仙の桃源郷（Persona Chamber）"
-        st.rerun()
-
-with col_t5:
-    btn_type5 = "primary" if st.session_state.selected_team == "ゴリラ合議制タスクフォース" else "secondary"
-    if st.button("🦍 ゴリラ部隊", type=btn_type5, use_container_width=True):
-        st.session_state.selected_team = "ゴリラ合議制タスクフォース"
-        st.rerun()
-
-# 選択中チームの概要バナー
 active_team_data = TEAMS[st.session_state.selected_team]
 st.info(f"**現在稼働中: {active_team_data['icon']} {st.session_state.selected_team}**\n\n_{active_team_data['desc']}_")
 
-# テーマ入力
 user_theme = st.text_area(
     "プロジェクトテーマ・検討課題",
     value=active_team_data["default_theme"],
@@ -312,37 +356,26 @@ if run_button:
         st.warning("テーマを入力してください。")
     else:
         cfg = active_team_data["roles"]
-        total_start = time.time()
+        labels = active_team_data["progress_labels"]
+        headers = active_team_data["headers"]
         is_gorilla = (st.session_state.selected_team == "ゴリラ合議制タスクフォース")
-        is_persona = (st.session_state.selected_team == "神仙の桃源郷（Persona Chamber）")
+        total_start = time.time()
         
         with st.status(f"{st.session_state.selected_team} が合議中...", expanded=True) as status:
             try:
                 # Phase 1: リーダー
                 t0 = time.time()
-                if is_gorilla:
-                    leader_label = "🦍 **ボスゴリラ** がドラミングしながら要件咆哮中..."
-                elif is_persona:
-                    leader_label = "🌿 **松下幸之助** が商売の道義と大義を定義中..."
-                else:
-                    leader_label = "👨‍💼 **リーダー** が課題設計中..."
-                status.write(leader_label)
+                status.write(labels["p1"])
                 leader_out = ask_agent("リーダー", cfg["leader"], user_theme)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
                 # Phase 2: リサーチャー
                 t0 = time.time()
-                if is_gorilla:
-                    research_label = "🔍 **慎重派ゴリラ** が木の上から匂いと危険を嗅ぎ分け中..."
-                elif is_persona:
-                    research_label = "✏️ **糸井重里** が愛される言葉のコア・無形のれんを編纂中..."
-                else:
-                    research_label = "🔍 **リサーチャー** が専門ファクト収集中..."
-                status.write(research_label)
+                status.write(labels["p2"])
                 research_out = ask_agent("リサーチャー", cfg["researcher"], leader_out)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
-                # Phase 3: 対立討論（並列）
+                # Phase 3: 対立討論（並列処理）
                 t0 = time.time()
                 status.write(f"⚡ **{cfg['promoter_title']} vs {cfg['redteam_title']}** が激突中...")
                 with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -354,26 +387,14 @@ if run_button:
 
                 # Phase 4: モデレーター
                 t0 = time.time()
-                if is_gorilla:
-                    mod_label = "💢 **ママゴリラ** が両者を張り倒して落としどころを決定中..."
-                elif is_persona:
-                    mod_label = "⚖️ **稲盛和夫** が大義と計数を統合し、最適解を調停中..."
-                else:
-                    mod_label = "⚖️ **モデレーター** が最適解を調停中..."
-                status.write(mod_label)
+                status.write(labels["p4"])
                 mod_input = f"【推進派の主張】\n{promoter_out}\n\n【慎重派の主張】\n{redteam_out}"
                 moderator_out = ask_agent("モデレーター", cfg["moderator"], mod_input)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
                 # Phase 5: プランナー
                 t0 = time.time()
-                if is_gorilla:
-                    plan_label = "🗺️ **喧嘩っぱやい子ゴリラ** が鼻息荒くナワバリ工程表を策定中..."
-                elif is_persona:
-                    plan_label = "🏎️ **豊田章男** が現地現物の泥臭いカイゼン工程表を策定中..."
-                else:
-                    plan_label = "🗺️ **プランナー** がアクションロードマップを策定中..."
-                status.write(plan_label)
+                status.write(labels["p5"])
                 planner_out = ask_agent("プランナー", cfg["planner"], moderator_out)
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
@@ -422,12 +443,10 @@ if run_button:
                 st.info(lead_out)
 
                 with st.expander("📌 Phase 1 & 2: 前提設計とファクト・無形資産", expanded=False):
-                    leader_header = "🌿 松下幸之助の理念・大義定義" if is_persona else "👑 リーダーの要件定義"
-                    researcher_header = "✏️ 糸井重里の無形資産・言葉のコア" if is_persona else "🔍 リサーチャーの調査結果"
-                    st.markdown(f"#### {leader_header}")
+                    st.markdown(f"#### {headers['p1']}")
                     st.markdown(leader_out)
                     st.markdown("---")
-                    st.markdown(f"#### {researcher_header}")
+                    st.markdown(f"#### {headers['p2']}")
                     st.markdown(research_out)
 
                 st.markdown("### ⚔️ Phase 3: 対立討論")
@@ -441,13 +460,11 @@ if run_button:
                         st.markdown(f"#### {cfg['redteam_title']}")
                         st.markdown(redteam_out)
 
-                moderator_header = "⚖️ 稲盛和夫の採算・フィロソフィ止揚案" if is_persona else "⚖️ Phase 4: 止揚・最適解"
-                st.markdown(f"### {moderator_header}")
+                st.markdown(f"### {headers['p4']}")
                 with st.container(border=True):
                     st.markdown(moderator_out)
 
-                planner_header = "🏎️ 豊田章男の現地現物カイゼン工程表" if is_persona else "🗺️ Phase 5: 確定アクションロードマップ"
-                st.markdown(f"### {planner_header}")
+                st.markdown(f"### {headers['p5']}")
                 with st.container(border=True):
                     st.markdown(planner_out)
 
@@ -496,5 +513,5 @@ if run_button:
                 st.caption("※ 本提案・工程表は自律型AIエージェントによる合議ドラフトです。実務導入時は関係法令・実勢相場等の専門的検証を行ってください。")
 
             except Exception as e:
-                status.update(label="❌ エラーが発生しました", state="error", expanded=True)
+                status.update(label="❌ 通信エラーが発生しました（お茶でも飲んで少しお待ちください）", state="error", expanded=True)
                 st.error(f"実行エラー詳細: {e}")
