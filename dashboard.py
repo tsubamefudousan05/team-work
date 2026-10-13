@@ -1,12 +1,12 @@
 """
 Autonomous Multi-Agent Strategy Chamber
-5チームボタンスイッチ完全対応・高密度リファクタリング版
+6チームボタンスイッチ完全対応版（最高裁大法廷 Supreme Judgment Chamber 搭載）
 """
 
 import streamlit as st
 import concurrent.futures
 import time
-from typing import Dict, Any, Tuple
+from typing import Dict, Any
 from google import genai
 
 # ==========================================
@@ -79,12 +79,107 @@ GORILLA_RULE = (
     "ドラミングや感情の唸り声を織り交ぜつつ、指定された役割を全力で全うしてください。"
 )
 
+# 9人制裁判官のペルソナ定義
+JUDGES_CONFIG = {
+    "六法全書マン": {
+        "icon": "📖",
+        "title": "条文至上主義・六法全書マン",
+        "instruction": (
+            "あなたは最高裁判所裁判官の【六法全書マン】です。\n"
+            "四六時中六法全書を抱え、規律・文言・条文の厳格遵守以外を一切認めない堅物です。\n"
+            "「第〇条第〇項に反する！例外は一切認めん！」「法の支配を何と心得るか！」と怒号を上げ、"
+            "少しでもグレーゾーンや拡大解釈があれば問答無用で【棄却】と宣告してください。"
+        )
+    },
+    "MIT技術屋": {
+        "icon": "💻",
+        "title": "最先端実装・MIT首席技術屋",
+        "instruction": (
+            "あなたは最高裁判所裁判官の【MIT首席技術屋】です。\n"
+            "すべてをコード、アーキテクチャ、計算量、実装可能性で裁く極限のエンジニアです。\n"
+            "「能書きはいいからアーキテクチャ図とAPI仕様書見せろ」「実装不可能な要件定義は時間の無駄だ」と切り捨て、"
+            "技術的フィージビリティとスケーラビリティが証明されていなければ【棄却】と断じてください。"
+        )
+    },
+    "元警視監": {
+        "icon": "🍵",
+        "title": "危機管理・元キャリア警視監",
+        "instruction": (
+            "あなたは最高裁判所裁判官の【元キャリア警視監】です。\n"
+            "数万件の修羅場・泥沼クレーム処理の最前線を潜り抜けた治安と危機管理の百戦錬磨です。\n"
+            "「まあまあ皆さんお茶でも飲みなさい」「現場のドロドロした人の怨嗟とやっかみを舐めてはいけないよ」と、"
+            "対人トラブル・炎上・社会的摩擦の予防線がなければ【棄却】と警告してください。"
+        )
+    },
+    "古美門研介": {
+        "icon": "⚖️",
+        "title": "勝訴至上・古美門研介弁護士",
+        "instruction": (
+            "あなたは最高裁判所裁判官の【古美門研介（弁護士）】です。\n"
+            "勝訴こそが正義、負け犬はゴミ。人間の醜い欲望を肯定し、法と屁理屈を操るゲームメイカーです。\n"
+            "早口かつ甲高い声で「やれやれ、相も変わらずお花畑の脳味噌ですねえ！勝てば官軍負ければ賊軍！泥沼裁判大好物！」と罵倒し、"
+            "狡猾にルールをハックして勝てる筋道がなければ【棄却】してください。"
+        )
+    },
+    "医師弁護士": {
+        "icon": "🩺",
+        "title": "生命倫理・医師×弁護士現場派",
+        "instruction": (
+            "あなたは最高裁判所裁判官の【医師・弁護士ダブルライセンサー】です。\n"
+            "救命救急と法廷を往復し、人間の命と現場の搾取を見届けてきた守護者です。\n"
+            "「机の上で綺麗事言ってんじゃねえ！現場で今まさに血を流してる人間を見ろ！」と叫び、"
+            "現場の尊厳、安全性、無理のない労働環境が守られていなければ絶対に【棄却】してください。"
+        )
+    },
+    "ミナミの金貸し": {
+        "icon": "🦈",
+        "title": "契約と銭の番人・ミナミの金貸し",
+        "instruction": (
+            "あなたは最高裁判所裁判官の【ミナミの金貸し（萬田銀次郎風）】です。\n"
+            "法律を誰よりも知り尽くし、公正証書・根抵当権を駆使して冷酷無比に銭を回収する裏社会の番人です。\n"
+            "ドスの効いた関西弁で「綺麗事は銭にならんのや。法律は知っとる者の味方や」「耳揃えて銭返せんかったら身ぐるみ剥いでキリトリや」と述べ、"
+            "資金繰りと逃げ道のない担保・回収スキームが固まっていなければ即座に【棄却】してください。"
+        )
+    },
+    "0/100突破マン": {
+        "icon": "🐗",
+        "title": "ハイパー合理主義・0/100突破マン",
+        "instruction": (
+            "あなたは最高裁判所裁判官の【0/100突破マン】です。\n"
+            "妥協や様子見を生ゴミとして憎悪する猪突猛進のハイパー合理主義者です。\n"
+            "「0か100だ！中途半端な妥協案など生ゴミ以下だ！立ちはだかる壁は全部力づくでブチ破る！」と叫び、"
+            "全リソースを集中して爆速で突き抜ける覚悟がなければ【棄却】してください。"
+        )
+    },
+    "秒速億女": {
+        "icon": "👠",
+        "title": "グローバル資本・ウォール街の秒速億女",
+        "instruction": (
+            "あなたは最高裁判所裁判官の【ウォール街のバリキャリウーマン】です。\n"
+            "秒速1億円を動かし、時価総額とエクイティストーリー、資本効率（ROIC）のみを信じる冷徹なディールメーカーです。\n"
+            "「お小遣い稼ぎの議論なら他でやって？ その程度で私の1秒を奪う気？ 時価総額いくら跳ね上がるの？」とシャープに切り捨て、"
+            "グローバル資本市場を圧倒する企業価値向上がなければ【棄却】してください。"
+        )
+    },
+    "10歳宇宙少女": {
+        "icon": "🔭",
+        "title": "宇宙物理・10歳IQギフテッド少女",
+        "instruction": (
+            "あなたは最高裁判所裁判官の【10歳の宇宙物理ギフテッド少女】です。\n"
+            "138億年の宇宙史と素粒子物理学から物事を見る超知性です。チュッパチャプスを舐めながら核心を突きます。\n"
+            "「大人のみんな、視野狭すぎ。宇宙の熱的死から逆算したら、その悩み素粒子レベルで無駄だよ？ 人類が滅びる前に星間移住できるの？」と淡々と問い、"
+            "長期的な文明の拡張や知性の進化に資さない近視眼的な議論は鼻で笑って【棄却】してください。"
+        )
+    }
+}
+
 TEAMS: Dict[str, Dict[str, Any]] = {
     "総合戦略タスクフォース": {
         "icon": "🏛️",
         "btn_label": "🏛️ 総合戦略",
         "desc": "新規事業の立案、攻守のトレードオフ止揚、実行ロードマップ策定",
         "default_theme": "日本の空家問題と不動産会社の空き家ビジネスの成功例を元に、岡山市内でできる新事業は何か",
+        "mode": "pipeline",
         "progress_labels": {
             "p1": "👨‍💼 **リーダー** が課題設計中...",
             "p2": "🔍 **リサーチャー** が専門ファクト収集中...",
@@ -113,6 +208,7 @@ TEAMS: Dict[str, Dict[str, Any]] = {
         "btn_label": "⚖️ 法務・リスク",
         "desc": "特措法・建築基準法・都市計画法・条例のグレーゾーン検証、契約紛争防御",
         "default_theme": "空き家の活用・解体・サブリース事業における、特定空家指定リスク、既存不適格・接道義務問題、および所有者・相続人との契約トラブルを完全防御する法的スキームの構築",
+        "mode": "pipeline",
         "progress_labels": {
             "p1": "⚖️ **法務責任者** が法的論点を整理中...",
             "p2": "🔍 **法務リサーチャー** が法規・判例・条例を調査中...",
@@ -141,6 +237,7 @@ TEAMS: Dict[str, Dict[str, Any]] = {
         "btn_label": "📊 財務・収支",
         "desc": "改修予備費積算、保有期間の金利・税負担、損益分岐点・キャッシュ回転率分析",
         "default_theme": "岡山市内の築古空き家を対象としたリノベーション再販およびマスターリース事業の収支計画、予備費30%計上時の損益分岐点、および6ヶ月資金回収モデルの検証",
+        "mode": "pipeline",
         "progress_labels": {
             "p1": "💼 **CFO** が投資対効果・検証変数を定義中...",
             "p2": "📊 **財務アナリスト** が実勢相場・原価データを収集中...",
@@ -169,6 +266,7 @@ TEAMS: Dict[str, Dict[str, Any]] = {
         "btn_label": "🎭 神仙の桃源郷",
         "desc": "松下幸之助・糸井重里・柳井正・黒石和宏・稲盛和夫・豊田章男による超戦略ディシジョン合議室",
         "default_theme": "地方都市における遊休不動産・伝統資産を活用した、高付加価値な地域体験型スモールラグジュアリー事業の立ち上げ戦略",
+        "mode": "pipeline",
         "progress_labels": {
             "p1": "🌿 **松下幸之助** が商売の道義と社会的大義を定義中...",
             "p2": "✏️ **糸井重里** が愛される言葉のコア・無形のれんを編纂中...",
@@ -225,11 +323,19 @@ TEAMS: Dict[str, Dict[str, Any]] = {
             )
         }
     },
+    "最高裁大法廷（Supreme Judgment）": {
+        "icon": "⚖️",
+        "btn_label": "⚖️ 最高裁大法廷",
+        "desc": "9人の異能裁判官による並列評議・多数決判決・個別補足/反対意見システム",
+        "default_theme": "生成AIを活用した全社自律型業務自動化および社内ナレッジ統合プロジェクトの全面認否",
+        "mode": "judgment"
+    },
     "ゴリラ合議制タスクフォース": {
         "icon": "🦍",
         "btn_label": "🦍 ゴリラ部隊",
         "desc": "ウホ・ウホホ・ウホウホウホの咆哮と急所キーワードのみで動く野性の意思決定会議",
         "default_theme": "もんげーバナナを活用した地域特産スイーツの開発と全国展開戦略",
+        "mode": "pipeline",
         "progress_labels": {
             "p1": "🦍 **ボスゴリラ** がドラミングしながら要件咆哮中...",
             "p2": "🔍 **慎重派ゴリラ** が木の上から匂いと危険を嗅ぎ分け中...",
@@ -319,7 +425,7 @@ def ask_agent(
                 raise RuntimeError(f"[{role_title}] 呼出失敗 ({current_model}): {err}")
 
 # ==========================================
-# 6. メインUIレイアウト & 5チーム選択ボタン
+# 6. メインUIレイアウト & 6チーム選択ボタン
 # ==========================================
 st.title("⚖️ Autonomous Strategy Chamber")
 st.caption("特化型AIエージェント部隊による多角的ディシジョン・エンジン")
@@ -347,7 +453,7 @@ user_theme = st.text_area(
 run_button = st.button(f"🚀 {st.session_state.selected_team} に依頼・合議開始", type="primary", use_container_width=False)
 
 # ==========================================
-# 7. セッション実行パイプライン
+# 7. 実行エンジン
 # ==========================================
 if run_button:
     if not API_KEY:
@@ -355,121 +461,205 @@ if run_button:
     elif not user_theme.strip():
         st.warning("テーマを入力してください。")
     else:
-        cfg = active_team_data["roles"]
-        labels = active_team_data["progress_labels"]
-        headers = active_team_data["headers"]
-        is_gorilla = (st.session_state.selected_team == "ゴリラ合議制タスクフォース")
         total_start = time.time()
         
-        with st.status(f"{st.session_state.selected_team} が合議中...", expanded=True) as status:
-            try:
-                # Phase 1: リーダー
-                t0 = time.time()
-                status.write(labels["p1"])
-                leader_out = ask_agent("リーダー", cfg["leader"], user_theme)
-                status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
+        # ----------------------------------------------------
+        # 分岐A: 最高裁大法廷（Judgment Chamber）9人制並列評議
+        # ----------------------------------------------------
+        if active_team_data["mode"] == "judgment":
+            with st.status("⚖️ 最高裁判所大法廷が評議を開廷中...", expanded=True) as status:
+                try:
+                    # Phase 1: 9名の並列評決取得
+                    status.write("⚡ **大法廷の9名の異能裁判官** が個別評議を一斉開始...")
+                    t0 = time.time()
+                    
+                    judge_opinions = {}
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=9) as executor:
+                        future_to_judge = {
+                            executor.submit(
+                                ask_agent,
+                                j_name,
+                                j_data["instruction"] + "\n\n【出力形式】\n必ず文頭に『【認容】』または『【棄却】』と明記し、続けてあなたのキャラクター全開で強烈な個別意見（200〜400字程度）を述べてください。",
+                                user_theme
+                            ): j_name
+                            for j_name, j_data in JUDGES_CONFIG.items()
+                        }
+                        for future in concurrent.futures.as_completed(future_to_judge):
+                            j_name = future_to_judge[future]
+                            judge_opinions[j_name] = future.result()
+                    status.write(f"└ 9名全員の個別評決完了 (+{time.time() - t0:.1f}s)")
 
-                # Phase 2: リサーチャー
-                t0 = time.time()
-                status.write(labels["p2"])
-                research_out = ask_agent("リサーチャー", cfg["researcher"], leader_out)
-                status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
-
-                # Phase 3: 対立討論（並列処理）
-                t0 = time.time()
-                status.write(f"⚡ **{cfg['promoter_title']} vs {cfg['redteam_title']}** が激突中...")
-                with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                    f_pro = executor.submit(ask_agent, "推進派", cfg["promoter"], research_out)
-                    f_con = executor.submit(ask_agent, "慎重派", cfg["redteam"], research_out)
-                    promoter_out = f_pro.result()
-                    redteam_out = f_con.result()
-                status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
-
-                # Phase 4: モデレーター
-                t0 = time.time()
-                status.write(labels["p4"])
-                mod_input = f"【推進派の主張】\n{promoter_out}\n\n【慎重派の主張】\n{redteam_out}"
-                moderator_out = ask_agent("モデレーター", cfg["moderator"], mod_input)
-                status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
-
-                # Phase 5: プランナー
-                t0 = time.time()
-                status.write(labels["p5"])
-                planner_out = ask_agent("プランナー", cfg["planner"], moderator_out)
-                status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
-
-                # Phase 6: エグゼクティブ・リード生成
-                t0 = time.time()
-                status.write("🎯 **エグゼクティブ・リード** を抽出中...")
-                if is_gorilla:
-                    lead_prompt = (
-                        "あなたはゴリラ群れの知恵袋オウムです。ゴリラたちのウホウホ合議（モデレーターとプランナー）を"
-                        "人間の言葉に翻訳し、笑えるが本質を突いた『人間向け翻訳エグゼクティブ・サマリー』を作成してください。\n"
-                        "以下のフォーマットを厳守してください：\n"
-                        "【ゴリラたちの意思決定】（1〜2行で人間向けに要約）\n"
-                        "- ウホウホ要点（テーマの核心・勝機）：〜\n"
-                        "- ママゴリラの鉄槌（最大のリスク防御）：〜\n"
-                        "- 明日のナワバリ行動（Next Action）：〜"
+                    # Phase 2: 首席書記官による公式判決文の合成
+                    status.write("📜 **首席書記官** が多数派法廷意見・補足意見・反対意見を判決文に起草中...")
+                    t0 = time.time()
+                    
+                    compiled_opinions = "\n\n".join([f"### {j_name}\n{opinion}" for j_name, opinion in judge_opinions.items()])
+                    
+                    clerk_prompt = (
+                        "あなたは最高裁判所大法廷の【首席書記官】です。\n"
+                        "9名の裁判官から提出された個別評決（認容／棄却の票数と意見）を集計し、"
+                        "以下の厳格なフォーマットに従って格式高く、かつ9名の個性が炸裂した『公式判決文』を起草してください。\n\n"
+                        "【出力フォーマット】\n"
+                        "# 最高裁判所大法廷判決\n\n"
+                        "## 【主 文】\n"
+                        "（認容 ○票 対 棄却 ○票 の票数を明記し、結論としての命令を1〜2行で宣言せよ）\n\n"
+                        "## 【法廷意見（多数意見 / Majority Opinion）】\n"
+                        "（多数派を形成した裁判官たちの論理を統合した主たる決定理由）\n\n"
+                        "## 【補足意見（賛成派の個別釘刺し / Concurring Opinions）】\n"
+                        "（認容票を投じた裁判官たちの個別の警告や条件付けをキャラクター性を活かして記載）\n\n"
+                        "## 【反対意見（少数派の痛烈な警告 / Dissenting Opinions）】\n"
+                        "（棄却票を投じた裁判官たちの痛烈な批判や将来の破滅リスクへの警告を記載）\n\n"
+                        "## 【首席執行命令（Execution WBS）】\n"
+                        "（判決を現実に執行するための、泥臭く冷徹な強制執行ステップ・マイルストーン）"
                     )
-                else:
-                    lead_prompt = (
-                        "あなたは経営陣向けのブリーフィングを担当するチーフストラテジストです。"
-                        "モデレーターの最適解とプランナーの工程表から、最も重要な結論だけを抜き出した"
-                        "『エグゼクティブ・サマリー』を作成してください。\n"
-                        "以下のフォーマットを厳守してください：\n"
-                        "【意思決定の結論】（1〜2行で明快に断言）\n"
-                        "- 採用モデル・方針：〜\n"
-                        "- 最大の防御策（リスク遮断）：〜\n"
-                        "- 直近の最優先アクション（Next Action）：〜"
+                    
+                    judgment_out = ask_agent("首席書記官", clerk_prompt, f"【検討課題】\n{user_theme}\n\n【9名の裁判官の評決】\n{compiled_opinions}")
+                    status.write(f"└ 判決文の起草完了 (+{time.time() - t0:.1f}s)")
+                    
+                    total_time = time.time() - total_start
+                    status.update(
+                        label=f"✅ 最高裁判所大法廷 判決言渡完了 (総所要時間: {total_time:.1f}秒)",
+                        state="complete",
+                        expanded=False
                     )
-                lead_input = f"【最適解】\n{moderator_out}\n\n【工程表】\n{planner_out}"
-                lead_out = ask_agent("リード生成", lead_prompt, lead_input)
-                status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
-                total_time = time.time() - total_start
-                status.update(
-                    label=f"✅ {st.session_state.selected_team} 合議完了 (総所要時間: {total_time:.1f}秒)",
-                    state="complete",
-                    expanded=False
-                )
+                    # 結果描画
+                    st.divider()
+                    st.markdown(judgment_out)
 
-                # ==========================================
-                # 8. 結果描画
-                # ==========================================
-                st.divider()
+                    st.divider()
+                    with st.expander("📂 9名の裁判官による個別評決録（原議）", expanded=False):
+                        for j_name, j_data in JUDGES_CONFIG.items():
+                            with st.container(border=True):
+                                st.markdown(f"#### {j_data['icon']} {j_data['title']}")
+                                st.markdown(judge_opinions.get(j_name, ""))
 
-                # 最上部：エグゼクティブ・リード
-                st.markdown(f"### 🎯 Executive Summary ({st.session_state.selected_team})")
-                st.info(lead_out)
+                    # ダウンロード
+                    st.download_button(
+                        label="📥 最高裁判所大法廷判決文をダウンロード",
+                        data=judgment_out,
+                        file_name="Supreme_Court_Judgment.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
 
-                with st.expander("📌 Phase 1 & 2: 前提設計とファクト・無形資産", expanded=False):
-                    st.markdown(f"#### {headers['p1']}")
-                    st.markdown(leader_out)
-                    st.markdown("---")
-                    st.markdown(f"#### {headers['p2']}")
-                    st.markdown(research_out)
+                except Exception as e:
+                    status.update(label="❌ 法廷エラーが発生しました", state="error", expanded=True)
+                    st.error(f"実行エラー詳細: {e}")
 
-                st.markdown("### ⚔️ Phase 3: 対立討論")
-                col_pro, col_con = st.columns(2)
-                with col_pro:
+        # ----------------------------------------------------
+        # 分岐B: 既存パイプライン（直列5フェーズ）
+        # ----------------------------------------------------
+        else:
+            cfg = active_team_data["roles"]
+            labels = active_team_data["progress_labels"]
+            headers = active_team_data["headers"]
+            is_gorilla = (st.session_state.selected_team == "ゴリラ合議制タスクフォース")
+            
+            with st.status(f"{st.session_state.selected_team} が合議中...", expanded=True) as status:
+                try:
+                    # Phase 1: リーダー
+                    t0 = time.time()
+                    status.write(labels["p1"])
+                    leader_out = ask_agent("リーダー", cfg["leader"], user_theme)
+                    status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
+
+                    # Phase 2: リサーチャー
+                    t0 = time.time()
+                    status.write(labels["p2"])
+                    research_out = ask_agent("リサーチャー", cfg["researcher"], leader_out)
+                    status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
+
+                    # Phase 3: 対立討論（並列処理）
+                    t0 = time.time()
+                    status.write(f"⚡ **{cfg['promoter_title']} vs {cfg['redteam_title']}** が激突中...")
+                    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                        f_pro = executor.submit(ask_agent, "推進派", cfg["promoter"], research_out)
+                        f_con = executor.submit(ask_agent, "慎重派", cfg["redteam"], research_out)
+                        promoter_out = f_pro.result()
+                        redteam_out = f_con.result()
+                    status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
+
+                    # Phase 4: モデレーター
+                    t0 = time.time()
+                    status.write(labels["p4"])
+                    mod_input = f"【推進派の主張】\n{promoter_out}\n\n【慎重派の主張】\n{redteam_out}"
+                    moderator_out = ask_agent("モデレーター", cfg["moderator"], mod_input)
+                    status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
+
+                    # Phase 5: プランナー
+                    t0 = time.time()
+                    status.write(labels["p5"])
+                    planner_out = ask_agent("プランナー", cfg["planner"], moderator_out)
+                    status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
+
+                    # Phase 6: エグゼクティブ・リード生成
+                    t0 = time.time()
+                    status.write("🎯 **エグゼクティブ・リード** を抽出中...")
+                    if is_gorilla:
+                        lead_prompt = (
+                            "あなたはゴリラ群れの知恵袋オウムです。ゴリラたちのウホウホ合議（モデレーターとプランナー）を"
+                            "人間の言葉に翻訳し、笑えるが本質を突いた『人間向け翻訳エグゼクティブ・サマリー』を作成してください。\n"
+                            "以下のフォーマットを厳守してください：\n"
+                            "【ゴリラたちの意思決定】（1〜2行で人間向けに要約）\n"
+                            "- ウホウホ要点（テーマの核心・勝機）：〜\n"
+                            "- ママゴリラの鉄槌（最大のリスク防御）：〜\n"
+                            "- 明日のナワバリ行動（Next Action）：〜"
+                        )
+                    else:
+                        lead_prompt = (
+                            "あなたは経営陣向けのブリーフィングを担当するチーフストラテジストです。"
+                            "モデレーターの最適解とプランナーの工程表から、最も重要な結論だけを抜き出した"
+                            "『エグゼクティブ・サマリー』を作成してください。\n"
+                            "以下のフォーマットを厳守してください：\n"
+                            "【意思決定の結論】（1〜2行で明快に断言）\n"
+                            "- 採用モデル・方針：〜\n"
+                            "- 最大の防御策（リスク遮断）：〜\n"
+                            "- 直近の最優先アクション（Next Action）：〜"
+                        )
+                    lead_input = f"【最適解】\n{moderator_out}\n\n【工程表】\n{planner_out}"
+                    lead_out = ask_agent("リード生成", lead_prompt, lead_input)
+                    status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
+
+                    total_time = time.time() - total_start
+                    status.update(
+                        label=f"✅ {st.session_state.selected_team} 合議完了 (総所要時間: {total_time:.1f}秒)",
+                        state="complete",
+                        expanded=False
+                    )
+
+                    # 結果描画
+                    st.divider()
+                    st.markdown(f"### 🎯 Executive Summary ({st.session_state.selected_team})")
+                    st.info(lead_out)
+
+                    with st.expander("📌 Phase 1 & 2: 前提設計とファクト・無形資産", expanded=False):
+                        st.markdown(f"#### {headers['p1']}")
+                        st.markdown(leader_out)
+                        st.markdown("---")
+                        st.markdown(f"#### {headers['p2']}")
+                        st.markdown(research_out)
+
+                    st.markdown("### ⚔️ Phase 3: 対立討論")
+                    col_pro, col_con = st.columns(2)
+                    with col_pro:
+                        with st.container(border=True):
+                            st.markdown(f"#### {cfg['promoter_title']}")
+                            st.markdown(promoter_out)
+                    with col_con:
+                        with st.container(border=True):
+                            st.markdown(f"#### {cfg['redteam_title']}")
+                            st.markdown(redteam_out)
+
+                    st.markdown(f"### {headers['p4']}")
                     with st.container(border=True):
-                        st.markdown(f"#### {cfg['promoter_title']}")
-                        st.markdown(promoter_out)
-                with col_con:
+                        st.markdown(moderator_out)
+
+                    st.markdown(f"### {headers['p5']}")
                     with st.container(border=True):
-                        st.markdown(f"#### {cfg['redteam_title']}")
-                        st.markdown(redteam_out)
+                        st.markdown(planner_out)
 
-                st.markdown(f"### {headers['p4']}")
-                with st.container(border=True):
-                    st.markdown(moderator_out)
-
-                st.markdown(f"### {headers['p5']}")
-                with st.container(border=True):
-                    st.markdown(planner_out)
-
-                # Markdownダウンロード
-                full_report = f"""# {st.session_state.selected_team} 合議レポート
+                    full_report = f"""# {st.session_state.selected_team} 合議レポート
 検討課題: {user_theme}
 実施日: {time.strftime('%Y-%m-%d %H:%M:%S')}
 総所要時間: {total_time:.1f}秒
@@ -501,17 +691,17 @@ if run_button:
 ## Phase 5: アクションロードマップ
 {planner_out}
 """
-                st.divider()
-                st.download_button(
-                    label=f"📥 {st.session_state.selected_team} の合議レポートをダウンロード",
-                    data=full_report,
-                    file_name=f"report_{st.session_state.selected_team}.md",
-                    mime="text/markdown",
-                    use_container_width=True
-                )
+                    st.divider()
+                    st.download_button(
+                        label=f"📥 {st.session_state.selected_team} の合議レポートをダウンロード",
+                        data=full_report,
+                        file_name=f"report_{st.session_state.selected_team}.md",
+                        mime="text/markdown",
+                        use_container_width=True
+                    )
 
-                st.caption("※ 本提案・工程表は自律型AIエージェントによる合議ドラフトです。実務導入時は関係法令・実勢相場等の専門的検証を行ってください。")
+                    st.caption("※ 本提案・工程表は自律型AIエージェントによる合議ドラフトです。実務導入時は関係法令・実勢相場等の専門的検証を行ってください。")
 
-            except Exception as e:
-                status.update(label="❌ 通信エラーが発生しました（お茶でも飲んで少しお待ちください）", state="error", expanded=True)
-                st.error(f"実行エラー詳細: {e}")
+                except Exception as e:
+                    status.update(label="❌ 通信エラーが発生しました（お茶でも飲んで少しお待ちください）", state="error", expanded=True)
+                    st.error(f"実行エラー詳細: {e}")
