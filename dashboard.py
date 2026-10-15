@@ -102,7 +102,7 @@ API_KEY = st.secrets.get(
 )
 
 PRIMARY_MODEL = "gemini-2.5-flash"
-FALLBACK_MODEL = "gemini-2.5-pro"
+FALLBACK_MODEL = "gemini-3.1-pro-preview"
 
 MAX_RETRIES = 3
 BASE_WAIT_SECONDS = 4
