@@ -1,6 +1,6 @@
 """Autonomous Multi-Agent Strategy & Judicial Chamber
 
-外部設定（YAML）によるペルソナ分離 & 3審制難易度コントロール対応版
+外部設定（YAML）によるペルソナ分離 & 3審制難易度 & 画像証拠提出（Multimodal）対応版
 """
 
 import concurrent.futures
@@ -8,6 +8,8 @@ import glob
 import os
 import time
 from google import genai
+from google.genai import types
+from PIL import Image
 import streamlit as st
 import yaml
 
@@ -145,9 +147,7 @@ def load_chamber_data(filepath: str):
     return yaml.safe_load(f)
 
 
-def build_judge_prompt(
-    judge_info: dict, court_level_info: dict, court_key: str
-) -> str:
+def build_judge_prompt(judge_info: dict, court_level_info: dict) -> str:
   raw_strictness = judge_info.get("base_strictness", 3) + court_level_info.get(
       "offset", 0
   )
@@ -170,7 +170,7 @@ def build_judge_prompt(
 【出力フォーマット要件】：
 あなたの意見表明は必ず以下の形式で簡潔かつ鋭く出力してください。
 1行目：【認容】または【棄却】のどちらか一方のみを記述。
-2行目以降：あなたのペルソナ全開で、その判断に至った論理・糾弾・条件・アドバイスを述べること。
+2行目以降：提出されたテキストおよび【証拠画像】が存在する場合はその視覚情報（文字の大きさ、位置、全体のデザイン、配置等）も精査した上で、あなたのペルソナ全開で論理・糾弾・条件・アドバイスを述べること。
 """
   return prompt.strip()
 
@@ -195,7 +195,7 @@ with st.sidebar:
   active_chamber_file = available_chambers[selected_chamber_name]
   active_chamber_data = load_chamber_data(active_chamber_file)
 
-  # 3審制レベル選択
+  # 3審制レベル選択（court_levels がある場合のみ表示）
   court_levels = active_chamber_data.get("court_levels", {})
   level_display_map = {
       v.get("name", k): k
@@ -204,7 +204,6 @@ with st.sidebar:
   }
 
   if level_display_map:
-    # デフォルトで2番目（高裁相当）か、要素があればそれを選択
     def_idx = 1 if len(level_display_map) > 1 else 0
     selected_level_display = st.selectbox(
         "⚖️ 審理レベル（難易度コントロール）",
@@ -214,10 +213,9 @@ with st.sidebar:
     selected_level_key = level_display_map[selected_level_display]
     active_court_level_info = court_levels[selected_level_key]
   else:
-    selected_level_key = "standard"
     active_court_level_info = {
-        "name": "標準審査",
-        "modifier": "中立公正に審査せよ。",
+        "name": "通常審理（標準モード）",
+        "modifier": "各自の基本指針に基づき、中立公正に審査せよ。",
         "offset": 0,
     }
 
@@ -241,12 +239,13 @@ with st.sidebar:
 
 
 # ==========================================
-# 5. エージェントコア
+# 5. エージェントコア（画像対応）
 # ==========================================
 def ask_agent(
     role_title: str,
     system_instruction: str,
     prompt: str,
+    image: Image.Image = None,
     primary_model: str = PRIMARY_MODEL,
     fallback_model: str = FALLBACK_MODEL,
 ) -> str:
@@ -254,17 +253,23 @@ def ask_agent(
     raise ValueError("APIキーが設定されていません。")
 
   client = genai.Client(api_key=API_KEY)
-  combined_prompt = (
+  text_content = (
       f"【あなたの役割・ペルソナ】\n{system_instruction}\n\n"
       f"【入力コンテキスト・検討課題】\n{prompt}\n"
   )
+
+  # 画像がある場合はマルチモーダル contents を作成
+  if image:
+    contents = [text_content, image]
+  else:
+    contents = text_content
+
   current_model = primary_model
 
   for attempt in range(MAX_RETRIES):
     try:
       response = client.models.generate_content(
-          model=current_model,
-          contents=combined_prompt,
+          model=current_model, contents=contents
       )
       time.sleep(COOLDOWN_SECONDS)
       return response.text
@@ -281,22 +286,41 @@ def ask_agent(
 # ==========================================
 # 6. メインUIレイアウト
 # ==========================================
-st.title(f"⚖️ {active_chamber_data.get('name', 'Strategy Chamber')}")
+st.title(f"{active_chamber_data.get('name', 'Strategy Chamber')}")
 st.caption(
     f"審理環境: **{active_court_level_info.get('name')}** ｜"
     f" {active_court_level_info.get('modifier')}"
 )
 
+# 検討課題テキスト入力
 default_theme = (
-    "何でも初見でやってのけてしまう人間みたいな人間を天才と言うのか、"
-    "はたま何でも言語化できてしまって人に伝えるのが上手な人間を天才と称するのか、議論せよ。"
+    "セブンイレブンの炭火焼さばおにぎりを購入したところ、"
+    "パッケージの隅に小さな注記があるだけで海苔が巻かれていなかった。"
+    "このような誤認を誘発する商品設計は企業の欺罔行為として違法または不当とみなすべきか、論ぜよ。"
 )
 user_theme = st.text_area(
     "審理請求・検討課題（テーマ）",
     value=default_theme,
-    height=90,
-    help="事業アイデア、司法判断、思想検証、業務改善など多角的に裁定したい課題を入力してください。",
+    height=100,
+    help="事業アイデア、司法判断、思想検証、商品への不服申立てなどを入力してください。",
 )
+
+# 証拠画像アップローダー（復活）
+uploaded_file = st.file_uploader(
+    "📸 証拠物件・参考画像の提出（任意）",
+    type=["png", "jpg", "jpeg", "webp"],
+    help="パッケージ写真、契約書、図面などを添付すると、裁判官・メンバー全員が画像を直接精査します。",
+)
+
+evidence_img = None
+if uploaded_file is not None:
+  evidence_img = Image.open(uploaded_file)
+  st.image(
+      evidence_img,
+      caption="【提出証拠物件 甲第1号証】",
+      use_container_width=False,
+      width=300,
+  )
 
 run_button = st.button(
     "🚀 合議・開廷セッションを開始", type="primary", use_container_width=False
@@ -320,15 +344,14 @@ if run_button:
         status.write(
             f"🏛️ **合議体メンバー ({len(members)}名)** が一斉に個別審理に入ります..."
         )
+        if evidence_img:
+          status.write("🔍 提出された【証拠画像】を全メンバーに回覧中...")
 
-        # 各メンバーのプロンプトを構築して並列実行
         individual_results = []
 
         def eval_member(member):
-          p = build_judge_prompt(
-              member, active_court_level_info, selected_level_key
-          )
-          ans = ask_agent(member["name"], p, user_theme)
+          p = build_judge_prompt(member, active_court_level_info)
+          ans = ask_agent(member["name"], p, user_theme, image=evidence_img)
           return member, ans
 
         t0 = time.time()
@@ -357,7 +380,7 @@ if run_button:
             reject_count += 1
           opinions_text += f"\n\n### ■ {m['name']} ({m.get('title', '')})\n{ans}"
 
-        # 総括裁判長・統括モデレーターによる判決要約
+        # 主席統括官による判決要約
         t0 = time.time()
         status.write("📜 **統括判決文（総括サマリー）** を作成中...")
 
@@ -367,18 +390,22 @@ if run_button:
 
 【審理環境】：{active_court_level_info['name']}
 【採決結果】：認容 {approve_count}票 対 棄却 {reject_count}票
+【証拠物件】：{'あり（画像精査済み）' if evidence_img else 'なし（テキストのみ）'}
 
 【各構成員の個別意見】：
 {opinions_text}
 
 【出力要件】：
 1. 【主文】：採決結果を明記（「本件請求を認容する」または「本件請求を棄却する」）
-2. 【法廷意見（多数意見の骨子）】：なぜこの結論に至ったのか、本質的な勝因または欠陥を構造的に解説。
-3. 【個別補足意見のハイライト】：特に鋭い指摘を1〜2行ずつ要約。
-4. 【確定アクション命令（WBS）】：今後取るべき現実的なアクション工程表を提示。
+2. 【法廷意見（多数意見の骨子）】：なぜこの結論に至ったのか、本質的な理由を構造的に解説。
+3. 【個別補足意見のハイライト】：特に鋭い指摘や面白い意見を1〜2行ずつ要約。
+4. 【確定アクション命令】：今後取るべき現実的なアクション工程表を提示。
 """
         chief_summary = ask_agent(
-            "主席統括官", summary_prompt, f"【課題】: {user_theme}"
+            "主席統括官",
+            summary_prompt,
+            f"【課題】: {user_theme}",
+            image=evidence_img,
         )
         status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
 
@@ -439,6 +466,7 @@ if run_button:
 検討課題: {user_theme}
 実施日: {time.strftime('%Y-%m-%d %H:%M:%S')}
 審理レベル: {active_court_level_info.get('name')}
+証拠画像: {'あり' if evidence_img else 'なし'}
 採決結果: 認容 {approve_count}票 対 棄却 {reject_count}票
 所要時間: {total_time:.1f}秒
 
