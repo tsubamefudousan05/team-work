@@ -97,8 +97,8 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-# 無料枠クォータ上限ゼロ（limit: 0）を回避するため Flash モデルで統一
-TARGET_MODEL = "gemini-2.5-flash"
+# 最新の安定高速モデルに指定
+TARGET_MODEL = "gemini-3.8-flash"
 MAX_WORKERS = 3       # レート制限（RPM/TPM）を回避する安全な並列数
 MAX_RETRIES = 4       # レート制限発生時のリトライ上限回数
 BASE_WAIT_SECONDS = 3 # バックオフ初期待機秒数
