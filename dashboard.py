@@ -1,10 +1,10 @@
 """
 Autonomous Multi-Agent Strategy & Judicial Chamber
 - 証拠鑑定人キャッシュアーキテクチャ（画像1回解析・無料枠爆速化）
-- 応答テキスト確実抽出（サボり・空テキスト防止）
+- ペルソナ表現力の最大解放（ゴリラ等の野生・独自口調の完全復元）
 - 外部設定（YAML）によるペルソナ完全分離
 - 3審制動的難易度コントロール
-- 最新モデル gemini-3.8-flash 正式対応版
+- 最新モデル gemini-3.8-flash 稼働版
 """
 
 import os
@@ -98,7 +98,7 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-# Google最新の高速安定モデル（404解消）
+# Google最新の高速安定モデル
 TARGET_MODEL = "gemini-3.8-flash"
 MAX_WORKERS = 4
 MAX_RETRIES = 5
@@ -127,27 +127,26 @@ def load_chamber_data(filepath: str):
         return yaml.safe_load(f)
 
 def build_judge_prompt(judge_info: dict, court_level_info: dict) -> str:
+    """各ペルソナの魂・口調・行動規範を最優先で爆発させるプロンプト"""
     raw_strictness = judge_info.get("base_strictness", 3) + court_level_info.get("offset", 0)
     effective_strictness = max(1, min(5, raw_strictness))
     
     prompt = f"""
-【審理環境】：{court_level_info['name']}
+【現在の合議環境】：{court_level_info['name']}
 【環境方針】：{court_level_info['modifier']}
 
-【あなたの役割】：{judge_info['name']}（{judge_info.get('title', '')}）
+【あなたの正体・役割】：{judge_info['name']}（{judge_info.get('title', '')}）
 【厳格度レベル】：{effective_strictness}/5
-（Lv1: 改善的・支援的 〜 Lv3: 実利・証拠次第 〜 Lv5: 原則門前払い・絶対棄却）
 
-【行動・思考指針】：
+【あなたの絶対的なペルソナ・行動指針】：
 {judge_info['system_prompt'].strip()}
 
-【認容の絶対条件】：
+【認容（可決）の基準】：
 {judge_info['approval_condition'].strip()}
 
-【出力フォーマット要件】：
-あなたの意見表明は必ず以下の形式で簡潔かつ鋭く出力してください。
-1行目：【認容】または【棄却】のどちらか一方のみを記述。
-2行目以降：提出されたテキストおよび【証拠物件鑑定書】が存在する場合はその記載内容（文字サイズ、文字配置、注記の目立ちやすさ等）も踏まえ、あなたのペルソナ全開で論理・糾弾・条件・アドバイスを述べること。
+【判定ルール】：
+・1行目に必ず【認容】または【棄却】のいずれか一方のみを出力せよ。
+・2行目以降は、上記のペルソナ・口調・熱量・感情・世界観を100%全開にして理由を語り尽くせ！（遠慮や凡庸な要約は一切不要。あなたの言葉で吠えよ）
 """
     return prompt.strip()
 
@@ -210,9 +209,9 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 5. エージェントコア（確実なテキスト抽出）
+# 5. エージェントコア（温度引き上げ＆テキスト抽出強化）
 # ==========================================
-def call_gemini_api(system_instruction: str, prompt: str, image_bytes: bytes = None, image_mime: str = "image/jpeg") -> str:
+def call_gemini_api(system_instruction: str, prompt: str, image_bytes: bytes = None, image_mime: str = "image/jpeg", temp: float = 0.95) -> str:
     if not API_KEY:
         raise ValueError("APIキーが設定されていません。")
         
@@ -230,7 +229,7 @@ def call_gemini_api(system_instruction: str, prompt: str, image_bytes: bytes = N
                 contents=contents,
                 config=types.GenerateContentConfig(
                     system_instruction=system_instruction,
-                    temperature=0.7,
+                    temperature=temp,  # 高めの温度で個性を全開化
                 )
             )
             time.sleep(0.5)
@@ -260,24 +259,24 @@ def call_gemini_api(system_instruction: str, prompt: str, image_bytes: bytes = N
 
 def analyze_evidence_image(image_bytes: bytes, image_mime: str) -> str:
     system_prompt = (
-        "あなたは裁判所・合議体の『首席技術鑑定官』です。提出された証拠画像を客観的・網羅的に精査し、"
-        "各裁判官の判断材料となる『証拠物件鑑定調書』を作成してください。"
+        "あなたは合議体の『首席技術鑑定官』です。提出された証拠画像を客観的・網羅的に精査し、"
+        "各メンバーの判断材料となる『証拠物件鑑定調書』を作成してください。"
     )
     task_prompt = """
-以下の観点を漏れなく抽出し、客観的な事実のみを簡潔にまとめてください：
+以下の観点を客観的事実として簡潔にまとめてください：
 1. 画像に写っている対象物・商品名・メインキャッチコピー
 2. 最も強調されている視覚要素（写真、大きな文字、配色）
 3. パッケージや書面上に存在するすべての文字情報（特に価格、注意書き、注記）
 4. 文字の大きさ、配置位置（中央、左下、裏面等）、視認性（気づきやすさ・目立たなさ）
 5. 視覚的印象と文字情報の乖離・ギャップの有無
 """
-    return call_gemini_api(system_prompt, task_prompt, image_bytes, image_mime)
+    return call_gemini_api(system_prompt, task_prompt, image_bytes, image_mime, temp=0.2)
 
 # ==========================================
 # 6. メインUIレイアウト
 # ==========================================
 st.title(f"{active_chamber_data.get('name', 'Strategy Chamber')}")
-st.caption(f"審理環境: **{active_court_level_info.get('name')}** ｜ {active_court_level_info.get('modifier')}")
+st.caption(f"合議環境: **{active_court_level_info.get('name')}** ｜ {active_court_level_info.get('modifier')}")
 
 default_theme = (
     "セブンイレブンの炭火焼さばおにぎりを購入したところ、"
@@ -285,7 +284,7 @@ default_theme = (
     "このような誤認を誘発する商品設計は企業の欺罔行為として違法または不当とみなすべきか、論ぜよ。"
 )
 user_theme = st.text_area(
-    "審理請求・検討課題（テーマ）",
+    "審議課題・検討テーマ",
     value=default_theme,
     height=100,
     help="事業アイデア、司法判断、思想検証、商品への不服申立てなどを入力してください。"
@@ -294,7 +293,7 @@ user_theme = st.text_area(
 uploaded_file = st.file_uploader(
     "📸 証拠物件・参考画像の提出（任意）", 
     type=["png", "jpg", "jpeg", "webp"],
-    help="パッケージ写真、契約書、図面などを添付すると、技術鑑定官が精査して鑑定書を合議体に回覧します。"
+    help="写真や資料を添付すると、技術鑑定官が精査して鑑定書を合議体に回覧します。"
 )
 
 evidence_bytes = None
@@ -326,9 +325,9 @@ if run_button:
                     evidence_report = analyze_evidence_image(evidence_bytes, evidence_mime)
                     status.write(f"└ 証拠鑑定調書の作成完了 (+{time.time() - t_img:.1f}s)")
                 
-                combined_context = f"【審理請求課題】:\n{user_theme}\n"
+                combined_context = f"【検討課題・テーマ】:\n{user_theme}\n"
                 if evidence_report:
-                    combined_context += f"\n【提出証拠物件の鑑定調書（甲第1号証）】:\n{evidence_report}\n"
+                    combined_context += f"\n【提出された証拠の客観的鑑定結果】:\n{evidence_report}\n"
 
                 members = active_chamber_data.get("members", [])
                 status.write(f"🏛️ **合議体メンバー ({len(members)}名)** が審査中（並列処理）...")
@@ -336,7 +335,7 @@ if run_button:
                 individual_results = []
                 def eval_member(member):
                     sys_p = build_judge_prompt(member, active_court_level_info)
-                    ans = call_gemini_api(sys_p, combined_context)
+                    ans = call_gemini_api(sys_p, combined_context, temp=1.0)
                     return member, ans
                 
                 t0 = time.time()
@@ -364,28 +363,29 @@ if run_button:
                     opinions_text += f"\n\n### ■ {m['name']} ({m.get('title', '')})\n{safe_ans}"
                 
                 t0 = time.time()
-                status.write("📜 **統括判決文（総括サマリー）** を作成中...")
+                status.write("📜 **統括判決・総括サマリー** を作成中...")
                 
                 summary_prompt = f"""
-あなたは本合議体（{active_chamber_data.get('name')}）の主席統括官（首席判事）です。
-各構成員の個別意見を統合し、厳格かつ説得力に富んだ「主文・法廷意見（総括）」を作成してください。
+あなたはこの合議体（{active_chamber_data.get('name')}）の長・総括リーダーです。
+この合議体の世界観・ノリ・トーンを完璧に維持した上で、構成員全員の意見を統合した「最終結論サマリー」を作成してください。
 
-【審理環境】：{active_court_level_info['name']}
+【環境】：{active_court_level_info['name']}
 【採決結果】：認容 {approve_count}票 対 棄却 {reject_count}票
-【証拠物件】：{'あり（鑑定調書参照済み）' if evidence_bytes else 'なし（テキストのみ）'}
+【証拠物件】：{'あり（鑑定済み）' if evidence_bytes else 'なし'}
 
-【各構成員の個別意見】：
+【各構成員の意見】：
 {opinions_text}
 
 【出力要件】：
-1. 【主文】：採決結果を明記（「本件請求を認容する」または「本件請求を棄却する」）
-2. 【法廷意見（多数意見の骨子）】：なぜこの結論に至ったのか、本質的な理由を構造的に解説。
-3. 【個別補足意見のハイライト】：特に鋭い指摘や面白い意見を1〜2行ずつ要約。
-4. 【確定アクション命令】：今後取るべき現実的なアクション工程表を提示。
+1. 【最終主文】：認容か棄却かを明確に宣告。
+2. 【総括意見】：なぜこの結論になったのか、この合議体らしいトーンで熱く解説。
+3. 【注目意見のピックアップ】：構成員の面白かった叫びや鋭かった指摘をハイライト。
+4. 【確定アクション命令】：今後人間（または群れ）が取るべき現実的なアクション。
 """
                 chief_summary = call_gemini_api(
                     summary_prompt,
-                    f"【審理課題】: {user_theme}\n\n【証拠鑑定情報】:\n{evidence_report}"
+                    f"【課題】: {user_theme}\n\n【証拠情報】:\n{evidence_report}",
+                    temp=0.8
                 )
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
                 
@@ -415,10 +415,10 @@ if run_button:
                     with st.expander("🔍 首席技術鑑定官による【証拠物件鑑定調書】を確認", expanded=False):
                         st.markdown(evidence_report)
 
-                st.markdown("### 📜 統括判決・エグゼクティブサマリー")
+                st.markdown("### 📜 統括・エグゼクティブサマリー")
                 st.markdown(f"<div class='lead-box'>{chief_summary}</div>", unsafe_allow_html=True)
                 
-                st.markdown("### 🗣️ 構成員（裁判官・メンバー）の個別意見")
+                st.markdown("### 🗣️ 構成員（メンバー）の個別意見")
                 cols = st.columns(2)
                 for idx, (m, ans) in enumerate(individual_results):
                     safe_ans = str(ans) if ans else "【棄却】\n（意見なし）"
@@ -436,10 +436,10 @@ if run_button:
                             st.markdown(f"**{m['name']}** （{m.get('title', '')}）")
                             st.markdown(safe_ans)
                 
-                full_report = f"""# {active_chamber_data.get('name')} 合議判決レポート
+                full_report = f"""# {active_chamber_data.get('name')} 合議レポート
 検討課題: {user_theme}
 実施日: {time.strftime('%Y-%m-%d %H:%M:%S')}
-審理レベル: {active_court_level_info.get('name')}
+環境: {active_court_level_info.get('name')}
 証拠画像: {'あり' if evidence_bytes else 'なし'}
 採決結果: 認容 {approve_count}票 対 棄却 {reject_count}票
 所要時間: {total_time:.1f}秒
@@ -449,7 +449,7 @@ if run_button:
 {evidence_report if evidence_report else '証拠提出なし'}
 
 ---
-## ■ 統括判決文（主席統括官サマリー）
+## ■ 統括サマリー
 {chief_summary}
 
 ---
