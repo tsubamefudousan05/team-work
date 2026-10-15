@@ -4,6 +4,7 @@ Autonomous Multi-Agent Strategy & Judicial Chamber
 - 3審制動的難易度コントロール
 - マルチモーダル証拠画像精査（安定化版）
 - レート制限（429）およびサーバー過負荷（503）自動指数バックオフ実装
+- NoneType安全ガード付き集計
 - 最新モデル gemini-3.8-flash 稼働版
 """
 
@@ -213,7 +214,7 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 5. エージェントコア（429 & 503 自動リトライ対応）
+# 5. エージェントコア（429 & 503 自動リトライ & Noneガード対応）
 # ==========================================
 def ask_agent(role_title: str, system_instruction: str, prompt: str, image_bytes: bytes = None, image_mime: str = "image/jpeg") -> str:
     if not API_KEY:
@@ -234,18 +235,17 @@ def ask_agent(role_title: str, system_instruction: str, prompt: str, image_bytes
             )
         )
     
-    # レート制限（429）およびサーバー過負荷（503）を考慮した指数バックオフ付きリトライ
     for attempt in range(MAX_RETRIES):
         try:
             response = client.models.generate_content(
                 model=TARGET_MODEL,
                 contents=contents
             )
-            time.sleep(0.8) # 呼び出し後の安全インターバル
-            return response.text
+            time.sleep(0.8)
+            result_text = response.text if response and response.text else "【棄却】\n（意見取得不能：審査意見を生成できませんでした）"
+            return result_text
         except Exception as err:
             err_str = str(err)
-            # 429（制限超過）や503（一時的過負荷）を検知した場合は待機して再試行
             if any(code in err_str for code in ["429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE"]):
                 wait_time = BASE_WAIT_SECONDS * (2 ** attempt)
                 time.sleep(wait_time)
@@ -321,18 +321,21 @@ if run_button:
                 
                 status.write(f"└ 全員個別審査完了 (+{time.time() - t0:.1f}s)")
                 
-                # 採決結果の集計
+                # 採決結果の集計（NoneType安全処理）
                 approve_count = 0
                 reject_count = 0
                 opinions_text = ""
                 
                 for m, ans in individual_results:
-                    is_approve = "【認容】" in ans.split("\n")[0]
+                    safe_ans = str(ans) if ans is not None else "【棄却】\n（意見なし）"
+                    first_line = safe_ans.split("\n")[0] if "\n" in safe_ans else safe_ans
+                    
+                    is_approve = "【認容】" in first_line
                     if is_approve:
                         approve_count += 1
                     else:
                         reject_count += 1
-                    opinions_text += f"\n\n### ■ {m['name']} ({m.get('title', '')})\n{ans}"
+                    opinions_text += f"\n\n### ■ {m['name']} ({m.get('title', '')})\n{safe_ans}"
                 
                 # 主席統括官による総括判決文の生成
                 t0 = time.time()
@@ -392,17 +395,20 @@ if run_button:
                 st.markdown("### 🗣️ 構成員（裁判官・メンバー）の個別意見")
                 cols = st.columns(2)
                 for idx, (m, ans) in enumerate(individual_results):
+                    safe_ans = str(ans) if ans is not None else "【棄却】\n（意見なし）"
+                    first_line = safe_ans.split("\n")[0] if "\n" in safe_ans else safe_ans
+                    is_approve = "【認容】" in first_line
+
                     col_target = cols[idx % 2]
                     with col_target:
                         with st.container(border=True):
-                            is_approve = "【認容】" in ans.split("\n")[0]
                             if is_approve:
                                 st.markdown("<span class='vote-badge-approve'>【認容】</span>", unsafe_allow_html=True)
                             else:
                                 st.markdown("<span class='vote-badge-reject'>【棄却】</span>", unsafe_allow_html=True)
                                 
                             st.markdown(f"**{m['name']}** （{m.get('title', '')}）")
-                            st.markdown(ans)
+                            st.markdown(safe_ans)
                 
                 # ダウンロード用テキスト
                 full_report = f"""# {active_chamber_data.get('name')} 合議判決レポート
