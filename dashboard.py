@@ -95,7 +95,7 @@ if not st.session_state.authenticated:
 # 3. コンフィグレーション
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
-TARGET_MODEL = "gemini-3.8-flash"
+TARGET_MODEL = "gemini-2.0-flash"
 MAX_RETRIES = 3
 BASE_WAIT_SECONDS = 1.5
 
