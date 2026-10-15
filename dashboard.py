@@ -4,6 +4,7 @@ Autonomous Multi-Agent Strategy & Judicial Chamber
 - 応答テキスト確実抽出（サボり・空テキスト防止）
 - 外部設定（YAML）によるペルソナ完全分離
 - 3審制動的難易度コントロール
+- 最新モデル gemini-3.8-flash 正式対応版
 """
 
 import os
@@ -97,7 +98,8 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-TARGET_MODEL = "gemini-2.5-flash"
+# Google最新の高速安定モデル（404解消）
+TARGET_MODEL = "gemini-3.8-flash"
 MAX_WORKERS = 4
 MAX_RETRIES = 5
 BASE_WAIT_SECONDS = 3
