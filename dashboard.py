@@ -1,10 +1,9 @@
 """
 Autonomous Multi-Agent Strategy & Judicial Chamber
 - 証拠鑑定人キャッシュアーキテクチャ（画像1回解析・無料枠爆速化）
+- 応答テキスト確実抽出（サボり・空テキスト防止）
 - 外部設定（YAML）によるペルソナ完全分離
 - 3審制動的難易度コントロール
-- 指数バックオフ付き安全通信
-- 最新モデル gemini-3.8-flash 稼働版
 """
 
 import os
@@ -98,15 +97,14 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-TARGET_MODEL = "gemini-3.8-flash"
-MAX_WORKERS = 4       # テキスト化によりレート制限に余裕ができたため並列数を向上
+TARGET_MODEL = "gemini-2.5-flash"
+MAX_WORKERS = 4
 MAX_RETRIES = 5
 BASE_WAIT_SECONDS = 3
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "config")
 
 def get_available_chambers():
-    """configフォルダ内の全YAMLファイルをスキャンして取得"""
     chambers = {}
     if not os.path.exists(CONFIG_DIR):
         os.makedirs(CONFIG_DIR, exist_ok=True)
@@ -127,7 +125,6 @@ def load_chamber_data(filepath: str):
         return yaml.safe_load(f)
 
 def build_judge_prompt(judge_info: dict, court_level_info: dict) -> str:
-    """各裁判官のプロンプトを審理レベルに応じて動的生成"""
     raw_strictness = judge_info.get("base_strictness", 3) + court_level_info.get("offset", 0)
     effective_strictness = max(1, min(5, raw_strictness))
     
@@ -211,29 +208,43 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 5. エージェントコア
+# 5. エージェントコア（確実なテキスト抽出）
 # ==========================================
 def call_gemini_api(system_instruction: str, prompt: str, image_bytes: bytes = None, image_mime: str = "image/jpeg") -> str:
-    """Gemini API呼び出しコア（自動リトライ付き）"""
     if not API_KEY:
         raise ValueError("APIキーが設定されていません。")
         
     client = genai.Client(api_key=API_KEY)
-    text_content = f"{system_instruction}\n\n{prompt}".strip()
-    
-    contents = [text_content]
+    contents = []
     if image_bytes:
         contents.append(types.Part.from_bytes(data=image_bytes, mime_type=image_mime))
+    contents.append(prompt)
     
+    last_err = None
     for attempt in range(MAX_RETRIES):
         try:
             response = client.models.generate_content(
                 model=TARGET_MODEL,
-                contents=contents
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    temperature=0.7,
+                )
             )
             time.sleep(0.5)
-            return response.text if response and response.text else ""
+            
+            if response.text:
+                return response.text.strip()
+            
+            if response.candidates and response.candidates[0].content.parts:
+                parts_text = "".join([p.text for p in response.candidates[0].content.parts if hasattr(p, "text") and p.text])
+                if parts_text:
+                    return parts_text.strip()
+                    
+            return "【棄却】\n（モデルからの応答テキストが空でした）"
+            
         except Exception as err:
+            last_err = err
             err_str = str(err)
             if any(code in err_str for code in ["429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE"]):
                 wait_time = BASE_WAIT_SECONDS * (2 ** attempt)
@@ -241,10 +252,11 @@ def call_gemini_api(system_instruction: str, prompt: str, image_bytes: bytes = N
             elif attempt < MAX_RETRIES - 1:
                 time.sleep(BASE_WAIT_SECONDS)
             else:
-                raise RuntimeError(f"API呼出失敗: {err}")
+                return f"【棄却】\n（審理不能エラー: {err}）"
+                
+    return f"【棄却】\n（リトライ上限超過: {last_err}）"
 
 def analyze_evidence_image(image_bytes: bytes, image_mime: str) -> str:
-    """【高速化の要】画像を最初に1回だけ解析し、客観的な証拠鑑定書（テキスト）に変換"""
     system_prompt = (
         "あなたは裁判所・合議体の『首席技術鑑定官』です。提出された証拠画像を客観的・網羅的に精査し、"
         "各裁判官の判断材料となる『証拠物件鑑定調書』を作成してください。"
@@ -277,7 +289,6 @@ user_theme = st.text_area(
     help="事業アイデア、司法判断、思想検証、商品への不服申立てなどを入力してください。"
 )
 
-# 証拠画像アップローダー
 uploaded_file = st.file_uploader(
     "📸 証拠物件・参考画像の提出（任意）", 
     type=["png", "jpg", "jpeg", "webp"],
@@ -306,7 +317,6 @@ if run_button:
         total_start = time.time()
         with st.status("合議セッション開廷中...", expanded=True) as status:
             try:
-                # 1. 証拠画像がある場合、最初に1回だけ解析して鑑定書を作成
                 evidence_report = ""
                 if evidence_bytes:
                     status.write("🔬 **首席技術鑑定官** が証拠物件を精密解析中...")
@@ -314,13 +324,12 @@ if run_button:
                     evidence_report = analyze_evidence_image(evidence_bytes, evidence_mime)
                     status.write(f"└ 証拠鑑定調書の作成完了 (+{time.time() - t_img:.1f}s)")
                 
-                # 2. 裁判官用の入力コンテキストを構築（鑑定書を統合）
                 combined_context = f"【審理請求課題】:\n{user_theme}\n"
                 if evidence_report:
                     combined_context += f"\n【提出証拠物件の鑑定調書（甲第1号証）】:\n{evidence_report}\n"
 
                 members = active_chamber_data.get("members", [])
-                status.write(f"🏛️ **合議体メンバー ({len(members)}名)** が一斉審査に入ります（並列処理）...")
+                status.write(f"🏛️ **合議体メンバー ({len(members)}名)** が審査中（並列処理）...")
                 
                 individual_results = []
                 def eval_member(member):
@@ -337,7 +346,6 @@ if run_button:
                 
                 status.write(f"└ 全員個別審査完了 (+{time.time() - t0:.1f}s)")
                 
-                # 3. 採決結果の集計（NoneType安全処理）
                 approve_count = 0
                 reject_count = 0
                 opinions_text = ""
@@ -353,7 +361,6 @@ if run_button:
                         reject_count += 1
                     opinions_text += f"\n\n### ■ {m['name']} ({m.get('title', '')})\n{safe_ans}"
                 
-                # 4. 主席統括官による総括判決文の生成
                 t0 = time.time()
                 status.write("📜 **統括判決文（総括サマリー）** を作成中...")
                 
@@ -402,16 +409,13 @@ if run_button:
                 with col_res2:
                     st.info(f"**審理基準**: {active_court_level_info.get('name')}\n\n{active_court_level_info.get('modifier')}")
 
-                # 証拠鑑定書（アコーディオン）
                 if evidence_report:
                     with st.expander("🔍 首席技術鑑定官による【証拠物件鑑定調書】を確認", expanded=False):
                         st.markdown(evidence_report)
 
-                # 主席判事の総括サマリー
                 st.markdown("### 📜 統括判決・エグゼクティブサマリー")
                 st.markdown(f"<div class='lead-box'>{chief_summary}</div>", unsafe_allow_html=True)
                 
-                # 各メンバーの個別意見一覧
                 st.markdown("### 🗣️ 構成員（裁判官・メンバー）の個別意見")
                 cols = st.columns(2)
                 for idx, (m, ans) in enumerate(individual_results):
@@ -430,7 +434,6 @@ if run_button:
                             st.markdown(f"**{m['name']}** （{m.get('title', '')}）")
                             st.markdown(safe_ans)
                 
-                # ダウンロード用テキスト
                 full_report = f"""# {active_chamber_data.get('name')} 合議判決レポート
 検討課題: {user_theme}
 実施日: {time.strftime('%Y-%m-%d %H:%M:%S')}
