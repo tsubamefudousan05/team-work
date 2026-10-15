@@ -3,7 +3,8 @@ Autonomous Multi-Agent Strategy & Judicial Chamber
 - 外部設定（YAML）によるペルソナ完全分離
 - 3審制動的難易度コントロール
 - マルチモーダル証拠画像精査（安定化版）
-- レート制限（429）自動リトライ＆指数バックオフ実装
+- レート制限（429）およびサーバー過負荷（503）自動指数バックオフ実装
+- 最新モデル gemini-3.8-flash 稼働版
 """
 
 import os
@@ -97,10 +98,10 @@ if not st.session_state.authenticated:
 # ==========================================
 API_KEY = st.secrets.get("GEMINI_API_KEY", st.session_state.get("custom_api_key", ""))
 
-# 最新の安定高速モデルに指定
+# Google最新の高速安定モデル
 TARGET_MODEL = "gemini-3.8-flash"
-MAX_WORKERS = 3       # レート制限（RPM/TPM）を回避する安全な並列数
-MAX_RETRIES = 4       # レート制限発生時のリトライ上限回数
+MAX_WORKERS = 2       # サーバー過負荷（503）とレート制限（429）を確実に防ぐ安全な並列数
+MAX_RETRIES = 5       # 自動リトライ上限回数
 BASE_WAIT_SECONDS = 3 # バックオフ初期待機秒数
 
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "config")
@@ -196,7 +197,7 @@ with st.sidebar:
     st.caption(f"**説明**: {active_chamber_data.get('description', '')}")
     st.caption(f"**参加メンバー数**: {len(active_chamber_data.get('members', []))}名")
     st.caption(f"**実行エンジン**: Gemini Flash (`{TARGET_MODEL}`)")
-    st.caption(f"**並列処理キュー**: {MAX_WORKERS}スレッド並列")
+    st.caption(f"**並列処理キュー**: {MAX_WORKERS}スレッド並列（自動バックオフ）")
     
     st.divider()
     if not st.secrets.get("GEMINI_API_KEY"):
@@ -212,7 +213,7 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 5. エージェントコア（画像＆指数バックオフ対応）
+# 5. エージェントコア（429 & 503 自動リトライ対応）
 # ==========================================
 def ask_agent(role_title: str, system_instruction: str, prompt: str, image_bytes: bytes = None, image_mime: str = "image/jpeg") -> str:
     if not API_KEY:
@@ -233,18 +234,19 @@ def ask_agent(role_title: str, system_instruction: str, prompt: str, image_bytes
             )
         )
     
-    # レート制限（429）を考慮した指数バックオフ付きリトライ
+    # レート制限（429）およびサーバー過負荷（503）を考慮した指数バックオフ付きリトライ
     for attempt in range(MAX_RETRIES):
         try:
             response = client.models.generate_content(
                 model=TARGET_MODEL,
                 contents=contents
             )
-            time.sleep(1.0) # 呼び出し後の安全インターバル
+            time.sleep(0.8) # 呼び出し後の安全インターバル
             return response.text
         except Exception as err:
             err_str = str(err)
-            if "429" in err_str or "RESOURCE_EXHAUSTED" in err_str:
+            # 429（制限超過）や503（一時的過負荷）を検知した場合は待機して再試行
+            if any(code in err_str for code in ["429", "503", "RESOURCE_EXHAUSTED", "UNAVAILABLE"]):
                 wait_time = BASE_WAIT_SECONDS * (2 ** attempt)
                 time.sleep(wait_time)
             elif attempt < MAX_RETRIES - 1:
