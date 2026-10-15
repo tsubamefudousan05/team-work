@@ -70,38 +70,28 @@ APP_PASSWORD = "708"
 if "authenticated" not in st.session_state:
   st.session_state.authenticated = False
 
-
-def check_password():
-  input_pw = st.session_state.get("password_input", "")
-  if input_pw == APP_PASSWORD:
-    st.session_state.authenticated = True
-    st.session_state.pop("password_input", None)
-    st.rerun()
-  else:
-    st.error("パスワードが正しくありません。")
-
-
 if not st.session_state.authenticated:
   st.title("🔒 Access Restricted")
   st.caption("Autonomous Multi-Agent Chamber")
 
   col1, col2, _ = st.columns([2, 1, 3])
   with col1:
-    st.text_input(
-        "パスワードを入力してください",
-        type="password",
-        key="password_input",
-        on_change=check_password,
+    input_pw = st.text_input(
+        "パスワードを入力してください", type="password", key="password_input"
     )
   with col2:
     st.write("")
     st.write("")
-    st.button(
-        "解除",
-        type="primary",
-        on_click=check_password,
-        use_container_width=True,
-    )
+    login_btn = st.button("解除", type="primary", use_container_width=True)
+
+  # 「解除ボタン」が押されたか、Enterキーで値が送信された時だけ判定
+  if login_btn or input_pw:
+    if input_pw == APP_PASSWORD:
+      st.session_state.authenticated = True
+      st.rerun()
+    else:
+      st.error("パスワードが正しくありません。")
+
   st.stop()
 
 # ==========================================
