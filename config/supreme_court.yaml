@@ -1,5 +1,5 @@
-id: "supreme_court"
-name: "⚖️ 最高裁判所大法廷（Supreme Court Chamber）"
+id: supreme_court
+name: ⚖️ 最高裁判所
 description: "9人の裁判官による厳格な合議体。法、資本、工学、現場、生命倫理の全方位ストレステスト"
 
 # 3審制による全体難易度補正
