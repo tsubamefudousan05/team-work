@@ -63,9 +63,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. パスワード認証ゲート (Secrets優先・フォールバック対応)
+# 2. パスワード認証ゲート
 # ==========================================
-APP_PASSWORD = st.secrets.get("APP_PASSWORD", "708")
+APP_PASSWORD = st.secrets.get("APP_PASSWORD")
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -83,14 +83,13 @@ if not st.session_state.authenticated:
         login_btn = st.button("解除", type="primary", use_container_width=True)
     
     if login_btn or input_pw:
-        if input_pw == APP_PASSWORD:
+        if APP_PASSWORD and input_pw == APP_PASSWORD:
             st.session_state.authenticated = True
             st.rerun()
         else:
             st.error("パスワードが正しくありません。")
             
     st.stop()
-
 # ==========================================
 # 3. コンフィグレーション
 # ==========================================
