@@ -3,6 +3,7 @@ Autonomous Multi-Agent Strategy & Judicial Chamber
 - 高速並列パイプライン（ウェイト全撤廃・最速化）
 - 口調・ペルソナ完全分離版（YAML駆動アーキテクチャ）
 - 動的サマリープロンプト対応
+- レベル制撤廃・シンプルUI版
 - 最新モデル gemini-3.8-flash 稼働版
 """
 
@@ -90,6 +91,7 @@ if not st.session_state.authenticated:
             st.error("パスワードが正しくありません。")
             
     st.stop()
+
 # ==========================================
 # 3. コンフィグレーション
 # ==========================================
@@ -120,10 +122,9 @@ def load_chamber_data(filepath: str):
     with open(filepath, "r", encoding="utf-8") as f:
         return yaml.safe_load(f)
 
-def build_judge_prompt(judge_info: dict, court_level_info: dict) -> str:
+def build_judge_prompt(judge_info: dict) -> str:
     """ペルソナの思考様式・口調・判断基準をYAMLの定義通りに発揮させる中立プロンプト"""
-    raw_strictness = judge_info.get("base_strictness", 3) + court_level_info.get("offset", 0)
-    effective_strictness = max(1, min(5, raw_strictness))
+    effective_strictness = judge_info.get("base_strictness", 3)
     
     prompt = f"""
 あなたは以下のペルソナ・専門家として振る舞います。設定された思考様式、価値観、固有の口調（トーン＆マナー）を厳格に維持して回答してください。一般的なAIらしい無難なまとめや中立的評論は禁止します。
@@ -162,25 +163,6 @@ with st.sidebar:
     active_chamber_file = available_chambers[selected_chamber_name]
     active_chamber_data = load_chamber_data(active_chamber_file)
     
-    court_levels = active_chamber_data.get("court_levels", {})
-    level_display_map = {v.get("name", k): k for k, v in court_levels.items() if isinstance(v, dict)}
-    
-    if level_display_map:
-        def_idx = 1 if len(level_display_map) > 1 else 0
-        selected_level_display = st.selectbox(
-            "⚖️ 審理レベル",
-            options=list(level_display_map.keys()),
-            index=def_idx
-        )
-        selected_level_key = level_display_map[selected_level_display]
-        active_court_level_info = court_levels[selected_level_key]
-    else:
-        active_court_level_info = {
-            "name": "通常審理",
-            "modifier": "各自の基本指針に基づき審査せよ。",
-            "offset": 0
-        }
-        
     st.divider()
     st.caption(f"**説明**: {active_chamber_data.get('description', '')}")
     st.caption(f"**参加メンバー数**: {len(active_chamber_data.get('members', []))}名")
@@ -250,7 +232,6 @@ def call_gemini_api(system_instruction: str, prompt: str, image_bytes: bytes = N
 # 6. メインUI
 # ==========================================
 st.title(f"{active_chamber_data.get('name', 'Strategy Chamber')}")
-st.caption(f"環境: **{active_court_level_info.get('name')}** ｜ {active_court_level_info.get('modifier')}")
 
 default_theme = (
     "セブンイレブンの炭火焼さばおにぎりを購入したところ、"
@@ -285,10 +266,9 @@ if run_button:
                 members = active_chamber_data.get("members", [])
                 status.write(f"🏛️ **合議体メンバー ({len(members)}名)** が一斉に個別審査中...")
                 
-                # メンバー全員を一括同時並列で回す
                 individual_results = []
                 def eval_member(member):
-                    sys_p = build_judge_prompt(member, active_court_level_info)
+                    sys_p = build_judge_prompt(member)
                     ans = call_gemini_api(sys_p, f"【検討課題】:\n{user_theme}", image_bytes=evidence_bytes, image_mime=evidence_mime)
                     return member, ans
                 
@@ -318,7 +298,6 @@ if run_button:
                 t0 = time.time()
                 status.write("📜 **統括サマリー** を作成中...")
                 
-                # YAML側に summary_instruction が定義されていればそれを採用、なければ標準フォーマットを使用
                 custom_summary_instruction = active_chamber_data.get("summary_instruction")
                 if not custom_summary_instruction:
                     custom_summary_instruction = """
@@ -332,7 +311,6 @@ if run_button:
 あなたはこの合議体（{active_chamber_data.get('name')}）の主宰者・統括リーダーです。
 合議体の世界観・理念・口調・トーンを完璧に維持し、各構成員の意見を統合した「最終結論」を作成してください。
 
-【環境】：{active_court_level_info['name']}
 【採決結果】：認容 {approve_count}票 対 棄却 {reject_count}票
 【各構成員の意見】：
 {opinions_text}
@@ -354,15 +332,12 @@ if run_button:
                 # 8. 結果描画
                 # ==========================================
                 st.divider()
-                col_res1, col_res2 = st.columns([1, 2])
-                with col_res1:
-                    if approve_count > reject_count:
-                        st.success(f"### 判定：認容（可決）\n認容 {approve_count} vs 棄却 {reject_count}")
-                    else:
-                        st.error(f"### 判定：棄却（否決）\n認容 {approve_count} vs 棄却 {reject_count}")
-                        
-                with col_res2:
-                    st.info(f"**審理基準**: {active_court_level_info.get('name')}\n\n{active_court_level_info.get('modifier')}")
+                if approve_count > reject_count:
+                    st.success(f"### 判定：認容（可決） ｜ 認容 {approve_count} 票 vs 棄却 {reject_count} 票")
+                elif approve_count < reject_count:
+                    st.error(f"### 判定：棄却（否決） ｜ 認容 {approve_count} 票 vs 棄却 {reject_count} 票")
+                else:
+                    st.warning(f"### 判定：可否同数 ｜ 認容 {approve_count} 票 vs 棄却 {reject_count} 票")
 
                 st.markdown("### 📜 統括・エグゼクティブサマリー")
                 st.markdown(f"<div class='lead-box'>{chief_summary}</div>", unsafe_allow_html=True)
