@@ -1,8 +1,8 @@
 """
 Autonomous Multi-Agent Strategy & Judicial Chamber
 - 高速並列パイプライン（ウェイト全撤廃・最速化）
-- ペルソナ野生化＆口調完全維持プロンプト
-- 外部設定（YAML）によるペルソナ分離
+- 口調・ペルソナ完全分離版（YAML駆動アーキテクチャ）
+- 動的サマリープロンプト対応
 - 最新モデル gemini-3.8-flash 稼働版
 """
 
@@ -63,9 +63,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. パスワード認証ゲート (Password: 708)
+# 2. パスワード認証ゲート (Secrets優先・フォールバック対応)
 # ==========================================
-APP_PASSWORD = "708"
+APP_PASSWORD = st.secrets.get("APP_PASSWORD", "708")
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -122,24 +122,24 @@ def load_chamber_data(filepath: str):
         return yaml.safe_load(f)
 
 def build_judge_prompt(judge_info: dict, court_level_info: dict) -> str:
-    """ペルソナの口調・叫び・感情を最優先で爆発させるプロンプト"""
+    """ペルソナの思考様式・口調・判断基準をYAMLの定義通りに発揮させる中立プロンプト"""
     raw_strictness = judge_info.get("base_strictness", 3) + court_level_info.get("offset", 0)
     effective_strictness = max(1, min(5, raw_strictness))
     
     prompt = f"""
-あなたは以下のキャラクターになりきり、その世界観・口調・衝動のみに従って発言してください。人間らしい無難な要約や一般的な評論は禁止します。
+あなたは以下のペルソナ・専門家として振る舞います。設定された思考様式、価値観、固有の口調（トーン＆マナー）を厳格に維持して回答してください。一般的なAIらしい無難なまとめや中立的評論は禁止します。
 
-【あなたの名前】：{judge_info['name']}（{judge_info.get('title', '')}）
+【あなたの名称】：{judge_info['name']}（{judge_info.get('title', '')}）
 【厳格度】：{effective_strictness}/5
-【あなたの絶対的ペルソナ・行動指針】：
+【あなたの行動指針・専門的視座・口調】：
 {judge_info['system_prompt'].strip()}
 
-【可決（認容）の条件】：
+【判断・採決の基準】：
 {judge_info['approval_condition'].strip()}
 
 【出力ルール】：
-1行目：必ず「【認容】」または「【棄却】」のどちらか1語のみ。
-2行目以降：あなたのペルソナ特有の感情、雄叫び（ウホウホ、怒号など）、口調、独自の価値観（バナナ、法理、利益、直感など）を100%全開にして理由を語れ！
+1行目：必ず「【認容】」または「【棄却】」のどちらか1語のみを出力してください。
+2行目以降：設定されたキャラクターの口調、専門用語、思考プロセス、感情、視座を十全に発揮して、その判断に至った理由を述べてください。
 """
     return prompt.strip()
 
@@ -319,9 +319,19 @@ if run_button:
                 t0 = time.time()
                 status.write("📜 **統括サマリー** を作成中...")
                 
+                # YAML側に summary_instruction が定義されていればそれを採用、なければ標準フォーマットを使用
+                custom_summary_instruction = active_chamber_data.get("summary_instruction")
+                if not custom_summary_instruction:
+                    custom_summary_instruction = """
+1. 【最終主文】：認容か棄却かを明確に宣告。
+2. 【総括意見】：なぜこの結論になったのか、この合議体らしいトーンで解説。
+3. 【注目意見のピックアップ】：構成員の際立った指摘や特徴的な意見をハイライト。
+4. 【確定アクション命令】：今後取るべき現実的なアクション。
+"""
+
                 summary_prompt = f"""
-あなたはこの合議体（{active_chamber_data.get('name')}）の長・総括リーダーです。
-合議体の世界観・口調・トーンを維持し、意見を統合した「最終結論」を作成せよ。
+あなたはこの合議体（{active_chamber_data.get('name')}）の主宰者・統括リーダーです。
+合議体の世界観・理念・口調・トーンを完璧に維持し、各構成員の意見を統合した「最終結論」を作成してください。
 
 【環境】：{active_court_level_info['name']}
 【採決結果】：認容 {approve_count}票 対 棄却 {reject_count}票
@@ -329,10 +339,7 @@ if run_button:
 {opinions_text}
 
 【出力要件】：
-1. 【最終主文】：認容か棄却かを明確に宣告。
-2. 【総括意見】：なぜこの結論になったのか、この合議体らしいトーンで熱く解説。
-3. 【注目意見のピックアップ】：構成員の面白かった叫びや鋭かった指摘をハイライト。
-4. 【確定アクション命令】：今後取るべき現実的なアクション。
+{custom_summary_instruction.strip()}
 """
                 chief_summary = call_gemini_api(
                     summary_prompt,
