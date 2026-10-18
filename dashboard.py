@@ -5,6 +5,7 @@ Autonomous Multi-Agent Strategy & Judicial Chamber
 - 動的サマリープロンプト対応
 - レベル制撤廃・シンプルUI版
 - 最新モデル gemini-3.8-flash 稼働版
+- マルチモーダル対応（画像・PDFファイル証拠提出機能）
 """
 
 import os
@@ -182,16 +183,16 @@ with st.sidebar:
         st.rerun()
 
 # ==========================================
-# 5. エージェントコア（高速版）
+# 5. エージェントコア（高速版・PDF/画像マルチモーダル対応）
 # ==========================================
-def call_gemini_api(system_instruction: str, prompt: str, image_bytes: bytes = None, image_mime: str = "image/jpeg", temp: float = 1.0) -> str:
+def call_gemini_api(system_instruction: str, prompt: str, evidence_bytes: bytes = None, evidence_mime: str = "image/jpeg", temp: float = 1.0) -> str:
     if not API_KEY:
         raise ValueError("APIキーが設定されていません。")
         
     client = genai.Client(api_key=API_KEY)
     contents = []
-    if image_bytes:
-        contents.append(types.Part.from_bytes(data=image_bytes, mime_type=image_mime))
+    if evidence_bytes:
+        contents.append(types.Part.from_bytes(data=evidence_bytes, mime_type=evidence_mime))
     contents.append(prompt)
     
     last_err = None
@@ -240,14 +241,24 @@ default_theme = (
 )
 user_theme = st.text_area("審議課題・検討テーマ", value=default_theme, height=100)
 
-uploaded_file = st.file_uploader("📸 証拠物件・参考画像（任意）", type=["png", "jpg", "jpeg", "webp"])
+# PDF と画像（PNG/JPG/WEBP）の両方を受け付けるよう拡張
+uploaded_file = st.file_uploader(
+    "📑 証拠物件・参考資料（画像 / PDF）", 
+    type=["png", "jpg", "jpeg", "webp", "pdf"],
+    help="契約書、規約、訴状などのPDF、または証拠写真・パッケージ画像をアップロードできます。"
+)
 
 evidence_bytes = None
 evidence_mime = "image/jpeg"
 if uploaded_file is not None:
     evidence_bytes = uploaded_file.getvalue()
-    evidence_mime = uploaded_file.type or "image/jpeg"
-    st.image(evidence_bytes, caption="【提出証拠物件 甲第1号証】", width=320)
+    evidence_mime = uploaded_file.type or "application/octet-stream"
+    
+    # プレビュー表示のハンドリング
+    if "pdf" in evidence_mime:
+        st.info(f"📄 **証拠書類（PDF）受領**: `{uploaded_file.name}` ({len(evidence_bytes) / 1024:.1f} KB)")
+    else:
+        st.image(evidence_bytes, caption=f"【提出証拠物件 甲第1号証: {uploaded_file.name}】", width=360)
 
 run_button = st.button("🚀 合議・開廷セッションを開始", type="primary")
 
@@ -269,7 +280,12 @@ if run_button:
                 individual_results = []
                 def eval_member(member):
                     sys_p = build_judge_prompt(member)
-                    ans = call_gemini_api(sys_p, f"【検討課題】:\n{user_theme}", image_bytes=evidence_bytes, image_mime=evidence_mime)
+                    ans = call_gemini_api(
+                        sys_p, 
+                        f"【検討課題】:\n{user_theme}", 
+                        evidence_bytes=evidence_bytes, 
+                        evidence_mime=evidence_mime
+                    )
                     return member, ans
                 
                 t0 = time.time()
@@ -321,6 +337,8 @@ if run_button:
                 chief_summary = call_gemini_api(
                     summary_prompt,
                     f"【課題】: {user_theme}",
+                    evidence_bytes=evidence_bytes,
+                    evidence_mime=evidence_mime,
                     temp=0.8
                 )
                 status.write(f"└ 完了 (+{time.time() - t0:.1f}s)")
